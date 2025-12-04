@@ -1,0 +1,60 @@
+{
+  "name": "tata-pay",
+  "version": "1.0.0",
+  "description": "Blockchain-based payment settlement infrastructure for Africa on Polkadot Asset Hub",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "hardhat test",
+    "test:unit": "hardhat test 'test/unit/**/*.test.js'",
+    "test:integration": "hardhat test 'test/integration/**/*.test.js'",
+    "test:e2e": "hardhat test 'test/e2e/**/*.test.js'",
+    "test:coverage": "hardhat coverage",
+    "test:gas": "REPORT_GAS=true hardhat test",
+    "compile": "hardhat compile",
+    "compile:clean": "hardhat clean && hardhat compile",
+    "node": "hardhat node",
+    "deploy:hello-world": "hardhat run scripts/deploy/01-deploy-hello-world.js --network paseo",
+    "deploy:collateral": "hardhat run scripts/deploy/02-deploy-collateral-pool.js --network paseo",
+    "deploy:fraud": "hardhat run scripts/deploy/03-deploy-fraud-prevention.js --network paseo",
+    "deploy:settlement": "hardhat run scripts/deploy/04-deploy-payment-settlement.js --network paseo",
+    "deploy:oracle": "hardhat run scripts/deploy/05-deploy-settlement-oracle.js --network paseo",
+    "deploy:governance": "hardhat run scripts/deploy/06-deploy-governance.js --network paseo",
+    "deploy:local": "hardhat run scripts/deploy/deploy-all.js --network localNode",
+    "deploy:paseo": "hardhat run scripts/deploy/deploy-all.js --network paseo",
+    "verify:paseo": "hardhat run scripts/utils/verify.js --network paseo",
+    "multisig:setup": "node scripts/utils/setup-multisig.js",
+    "security:slither": "slither .",
+    "lint": "solhint 'contracts/**/*.sol'",
+    "format": "prettier --write 'contracts/**/*.sol' 'test/**/*.js' 'scripts/**/*.js'"
+  },
+  "keywords": [
+    "polkadot",
+    "asset-hub",
+    "polkavm",
+    "defi",
+    "payments",
+    "settlement",
+    "usdc",
+    "africa"
+  ],
+  "author": "Tata-Pay Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@parity/hardhat-polkadot": "^0.1.10",
+    "@parity/resolc": "^0.3.0",
+    "hardhat": "^2.27.1",
+    "solc": "0.8.28",
+    "solhint": "^6.0.1",
+    "solidity-coverage": "^0.8.16",
+    "ws": "^8.18.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.4.0",
+    "dotenv": "^16.6.1"
+  }
+}
