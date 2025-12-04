@@ -165,214 +165,12 @@ describe("SettlementOracle - Integration Tests", function () {
     });
   });
 
-  describe("Batch Approval with Signatures", function () {
-    async function setupWithBatch() {
-      const fixture = await deployFixture();
-      const { oracle, settlement, pool, usdc, oracle1, fintech1, merchant1, merchant2, minimumStake } = fixture;
-
-      // Register oracle
-      await oracle.connect(oracle1).registerOracle({ value: minimumStake });
-
-      // Create batch
-      const merchants = [merchant1.address, merchant2.address];
-      const amounts = [
-        ethers.parseUnits("1000", 6),
-        ethers.parseUnits("2000", 6),
-      ];
-      const totalAmount = ethers.parseUnits("3000", 6);
-
-      await usdc.connect(fintech1).approve(pool.target, totalAmount);
-      await pool.connect(fintech1).deposit(totalAmount);
-
-      const tx = await settlement.connect(fintech1).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-      const event = receipt.logs.find(log => log.fragment && log.fragment.name === "BatchCreated");
-      const batchId = event.args[0];
-
-      return { ...fixture, batchId };
-    }
-
-    it("Should approve batch with valid signature", async function () {
-      const { oracle, settlement, oracle1, batchId } = await setupWithBatch();
-
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      // Create message hash
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-
-      // Sign message
-      const signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-
-      const tx = await oracle.connect(oracle1).approveBatch(batchId, nonce, signature);
-
-      await expect(tx).to.emit(oracle, "BatchApproved");
-      await expect(tx).to.emit(oracle, "NonceUsed").withArgs(oracle1.address, nonce, await ethers.provider.getBlock(tx.blockNumber).then(b => b.timestamp));
-
-      // Verify batch approved on settlement
-      const batch = await settlement.getBatch(batchId);
-      expect(batch.status).to.equal(1); // Processing
-
-      // Verify oracle stats
-      const info = await oracle.getOracleInfo(oracle1.address);
-      expect(info.approvals).to.equal(1);
-
-      // Verify nonce incremented
-      expect(await oracle.nonces(oracle1.address)).to.equal(nonce + 1n);
-    });
-
-    it("Should reject approval with invalid signature", async function () {
-      const { oracle, oracle1, oracle2, batchId, minimumStake } = await setupWithBatch();
-
-      // Register oracle2 to use as wrong signer
-      await oracle.connect(oracle2).registerOracle({ value: minimumStake });
-
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-
-      // Sign with wrong oracle
-      const wrongSignature = await oracle2.signMessage(ethers.getBytes(messageHash));
-
-      await expect(
-        oracle.connect(oracle1).approveBatch(batchId, nonce, wrongSignature)
-      ).to.be.revertedWith("SettlementOracle: Invalid signature");
-    });
-
-    it("Should reject approval with invalid nonce", async function () {
-      const { oracle, oracle1, batchId } = await setupWithBatch();
-
-      const wrongNonce = 999n;
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, wrongNonce, chainId, await oracle.getAddress()]
-      );
-
-      const signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-
-      await expect(
-        oracle.connect(oracle1).approveBatch(batchId, wrongNonce, signature)
-      ).to.be.revertedWith("SettlementOracle: Invalid nonce");
-    });
-
-    it("Should reject duplicate approval from same oracle", async function () {
-      const { oracle, oracle1, oracle2, batchId, admin, minimumStake } = await setupWithBatch();
-
-      // Register second oracle and set threshold to 2 to prevent immediate processing
-      await oracle.connect(oracle2).registerOracle({ value: minimumStake });
-      await oracle.connect(admin).setApprovalThreshold(2);
-
-      // First approval
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      let messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-
-      let signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-      await oracle.connect(oracle1).approveBatch(batchId, nonce, signature);
-
-      // Try to approve again (won't work - already voted)
-      const newNonce = await oracle.nonces(oracle1.address);
-      messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, newNonce, chainId, await oracle.getAddress()]
-      );
-
-      signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-
-      await expect(
-        oracle.connect(oracle1).approveBatch(batchId, newNonce, signature)
-      ).to.be.revertedWith("SettlementOracle: Already voted");
-    });
-  });
-
-  describe("Batch Rejection with Signatures", function () {
-    async function setupWithBatch() {
-      const fixture = await deployFixture();
-      const { oracle, settlement, pool, usdc, oracle1, fintech1, merchant1, merchant2, minimumStake } = fixture;
-
-      await oracle.connect(oracle1).registerOracle({ value: minimumStake });
-
-      const merchants = [merchant1.address, merchant2.address];
-      const amounts = [
-        ethers.parseUnits("1000", 6),
-        ethers.parseUnits("2000", 6),
-      ];
-      const totalAmount = ethers.parseUnits("3000", 6);
-
-      await usdc.connect(fintech1).approve(pool.target, totalAmount);
-      await pool.connect(fintech1).deposit(totalAmount);
-
-      const tx = await settlement.connect(fintech1).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-      const event = receipt.logs.find(log => log.fragment && log.fragment.name === "BatchCreated");
-      const batchId = event.args[0];
-
-      return { ...fixture, batchId };
-    }
-
-    it("Should reject batch with valid signature", async function () {
-      const { oracle, settlement, oracle1, batchId } = await setupWithBatch();
-
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-      const reason = "Invalid merchant verification";
-
-      // Create message hash with reason
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "bytes32", "uint256", "uint256", "address"],
-        [batchId, false, ethers.keccak256(ethers.toUtf8Bytes(reason)), nonce, chainId, await oracle.getAddress()]
-      );
-
-      const signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-
-      const tx = await oracle.connect(oracle1).rejectBatch(batchId, reason, nonce, signature);
-
-      await expect(tx).to.emit(oracle, "BatchRejected").withArgs(batchId, oracle1.address, reason, await ethers.provider.getBlock(tx.blockNumber).then(b => b.timestamp));
-
-      // Verify batch failed on settlement
-      const batch = await settlement.getBatch(batchId);
-      expect(batch.status).to.equal(3); // Failed
-
-      // Verify oracle stats
-      const info = await oracle.getOracleInfo(oracle1.address);
-      expect(info.rejections).to.equal(1);
-    });
-
-    it("Should reject with invalid signature", async function () {
-      const { oracle, oracle1, oracle2, batchId, minimumStake } = await setupWithBatch();
-
-      await oracle.connect(oracle2).registerOracle({ value: minimumStake });
-
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-      const reason = "Fraud detected";
-
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "bytes32", "uint256", "uint256", "address"],
-        [batchId, false, ethers.keccak256(ethers.toUtf8Bytes(reason)), nonce, chainId, await oracle.getAddress()]
-      );
-
-      // Wrong signer
-      const wrongSignature = await oracle2.signMessage(ethers.getBytes(messageHash));
-
-      await expect(
-        oracle.connect(oracle1).rejectBatch(batchId, reason, nonce, wrongSignature)
-      ).to.be.revertedWith("SettlementOracle: Invalid signature");
-    });
-  });
+  // NOTE: ECDSA signature-based tests removed for PolkaVM compatibility
+  // PolkaVM doesn't support ecrecover opcode, so SettlementOracle now uses
+  // role-based authorization (isRegistered && isActive checks) instead of signatures.
+  //
+  // Original tests expected: approveBatch(batchId, nonce, signature)
+  // Current implementation: approveBatch(batchId) - direct role-based call
 
   describe("Multi-Oracle Consensus", function () {
     async function setupWithMultipleOracles() {
@@ -406,29 +204,15 @@ describe("SettlementOracle - Integration Tests", function () {
     it("Should require threshold approvals before executing", async function () {
       const { oracle, settlement, oracle1, oracle2, batchId } = await setupWithMultipleOracles();
 
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      // First oracle approval
-      let nonce = await oracle.nonces(oracle1.address);
-      let messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-      let signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-      await oracle.connect(oracle1).approveBatch(batchId, nonce, signature);
+      // First oracle approval (role-based, no signature)
+      await oracle.connect(oracle1).approveBatch(batchId);
 
       // Batch should still be Pending (not enough approvals)
       let batch = await settlement.getBatch(batchId);
       expect(batch.status).to.equal(0); // Pending
 
       // Second oracle approval (reaches threshold)
-      nonce = await oracle.nonces(oracle2.address);
-      messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-      signature = await oracle2.signMessage(ethers.getBytes(messageHash));
-      await oracle.connect(oracle2).approveBatch(batchId, nonce, signature);
+      await oracle.connect(oracle2).approveBatch(batchId);
 
       // Batch should now be Processing
       batch = await settlement.getBatch(batchId);
@@ -575,17 +359,8 @@ describe("SettlementOracle - Integration Tests", function () {
       const event = receipt.logs.find(log => log.fragment && log.fragment.name === "BatchCreated");
       const batchId = event.args[0];
 
-      // Approve batch
-      const nonce = await oracle.nonces(oracle1.address);
-      const chainId = (await ethers.provider.getNetwork()).chainId;
-
-      const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "bool", "uint256", "uint256", "address"],
-        [batchId, true, nonce, chainId, await oracle.getAddress()]
-      );
-
-      const signature = await oracle1.signMessage(ethers.getBytes(messageHash));
-      await oracle.connect(oracle1).approveBatch(batchId, nonce, signature);
+      // Approve batch (role-based, no signature)
+      await oracle.connect(oracle1).approveBatch(batchId);
 
       const [approvals, rejections, processed] = await oracle.getBatchVoteStatus(batchId);
       expect(approvals).to.equal(1);

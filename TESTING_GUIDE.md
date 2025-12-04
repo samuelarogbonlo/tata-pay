@@ -5,7 +5,7 @@ Comprehensive testing for Tata-Pay smart contracts on Polkadot Asset Hub.
 ## Quick Start
 
 ```bash
-npm test                    # Run all 160 tests
+npm test                    # Run all 152 integration tests
 npm run test:coverage       # Generate coverage report
 ```
 
@@ -16,10 +16,10 @@ npm run test:coverage       # Generate coverage report
 | CollateralPool | 29 | Deposits, withdrawals, locking, slashing |
 | PaymentSettlement | 34 | Batch lifecycle, claims, timeouts |
 | FraudPrevention | 41 | Velocity limits, blacklist/whitelist |
-| SettlementOracle | 24 | Oracle registration, approvals |
+| SettlementOracle | 16 | Oracle registration, role-based approvals |
 | TataPayGovernance | 32 | Multi-sig, timelock, proposals |
 
-**Total: 160 integration tests** • **100% critical path coverage**
+**Total: 152 integration tests** • **100% critical path coverage**
 
 ## Key Scenarios Tested
 
@@ -51,7 +51,7 @@ Role-based oracle approvals, multi-oracle threshold consensus
 npx hardhat test test/integration/CollateralPool.integration.test.js        # 29 tests
 npx hardhat test test/integration/PaymentSettlement.integration.test.js     # 34 tests
 npx hardhat test test/integration/FraudPrevention.integration.test.js       # 41 tests
-npx hardhat test test/integration/SettlementOracle.integration.test.js      # 24 tests
+npx hardhat test test/integration/SettlementOracle.integration.test.js      # 16 tests (role-based)
 npx hardhat test test/integration/TataPayGovernance.integration.test.js     # 32 tests
 
 # Test specific features

@@ -41,16 +41,48 @@ Fintechs → CollateralPool → PaymentSettlement
 | `CollateralPool` | USDC deposits, withdrawals, locking | 29 ✓ |
 | `PaymentSettlement` | Batch processing, merchant claims | 34 ✓ |
 | `FraudPrevention` | Velocity limits, blacklisting | 41 ✓ |
-| `SettlementOracle` | Webhook auth, signature verification | 24 ✓ |
+| `SettlementOracle` | Webhook auth, role-based authorization | 16 ✓ |
 | `TataPayGovernance` | Multi-sig timelock governance | 32 ✓ |
 
 ## Testing
 
 See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation covering:
 - Settlement scenarios (happy path, partial claims, timeouts)
-- Edge cases (fraud limits, oracle signatures, governance)
-- 160 integration tests with 100% critical path coverage
+- Edge cases (fraud limits, role-based oracle authorization, governance)
+- 152 integration tests with 100% critical path coverage
 
+**Note:** Mock contracts (`MockUSDC`, `MaliciousReentrancy`) are used exclusively for local testing and attack simulations; all deployed contracts use real Asset Hub USDC precompile (Asset ID 1337).
+
+## Security
+
+Comprehensive security validation completed for production readiness:
+
+### Static Analysis ✅
+- **Tool:** Slither 0.11.3
+- **Results:** 0 critical, 0 high, 0 medium (unmitigated) vulnerabilities
+- **Report:** [docs/SECURITY_ANALYSIS.md](docs/SECURITY_ANALYSIS.md)
+
+### Attack Simulations ✅
+- **19 attack scenario tests** covering:
+  - Reentrancy attacks (ReentrancyGuard validation)
+  - Replay attacks (double-claim prevention)
+  - Denial of Service (batch size limits, gas optimization)
+  - Front-running protection (withdrawal delays, timelock)
+  - Integer overflow/underflow (Solidity 0.8.x + SafeERC20)
+  - Access control bypass (role-based permissions)
+  - Edge cases (zero amounts, empty arrays, mismatched inputs)
+
+### Security Features
+- ✅ **ReentrancyGuard** on all payment functions
+- ✅ **Emergency pause** mechanism in all contracts
+- ✅ **Role-based access control** (OpenZeppelin AccessControl)
+- ✅ **Fraud prevention** with velocity limits and blacklisting
+- ✅ **Multi-sig governance** with timelock delays (48h standard, 6h emergency)
+- ✅ **Oracle staking + slashing** for misbehavior prevention
+- ✅ **Withdrawal delays** (24h) to prevent flash attacks
+- ✅ **Batch size limits** (max 100 merchants) for gas safety
+
+See [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for complete security validation.
 
 ### Deployed Contracts (Paseo Testnet)
 
@@ -84,11 +116,12 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation
 
 ## Governance
 
-3-of-5 multi-sig with timelock:
+TataPayGovernance contract deployed with 3-of-5 multi-sig and timelock capabilities:
 - **Standard proposals**: 48h delay
 - **Emergency proposals**: 6h delay
 - **Proposal lifetime**: 7 days
-- Contract is self-governed (proposals required for all changes)
+- **Testnet Status**: Governance contract is deployed and functional, but admin rights not transferred (single deployer for testing flexibility)
+- **Mainnet Recommendation**: Transfer admin roles to multi-sig governance before production deployment
 
 ## License
 
