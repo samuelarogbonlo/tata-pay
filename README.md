@@ -21,6 +21,7 @@ Blockchain payment settlement infrastructure for batch payments on Polkadot Asse
 - **Framework**: Hardhat + @parity/hardhat-polkadot
 - **Security**: OpenZeppelin Contracts
 - **Testnet**: Paseo (Chain ID: 420420422)
+= **Slither**: Used 0.11.3 for security review
 
 ## Architecture
 
@@ -57,12 +58,7 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation
 
 Comprehensive security validation completed for production readiness:
 
-### Static Analysis ✅
-- **Tool:** Slither 0.11.3
-- **Results:** 0 critical, 0 high, 0 medium (unmitigated) vulnerabilities
-- **Report:** [docs/SECURITY_ANALYSIS.md](docs/SECURITY_ANALYSIS.md)
-
-### Attack Simulations ✅
+### Attack Simulations 
 - **19 attack scenario tests** covering:
   - Reentrancy attacks (ReentrancyGuard validation)
   - Replay attacks (double-claim prevention)
@@ -73,16 +69,14 @@ Comprehensive security validation completed for production readiness:
   - Edge cases (zero amounts, empty arrays, mismatched inputs)
 
 ### Security Features
-- ✅ **ReentrancyGuard** on all payment functions
-- ✅ **Emergency pause** mechanism in all contracts
-- ✅ **Role-based access control** (OpenZeppelin AccessControl)
-- ✅ **Fraud prevention** with velocity limits and blacklisting
-- ✅ **Multi-sig governance** with timelock delays (48h standard, 6h emergency)
-- ✅ **Oracle staking + slashing** for misbehavior prevention
-- ✅ **Withdrawal delays** (24h) to prevent flash attacks
-- ✅ **Batch size limits** (max 100 merchants) for gas safety
-
-See [docs/SECURITY_CHECKLIST.md](docs/SECURITY_CHECKLIST.md) for complete security validation.
+- **ReentrancyGuard** on all payment functions
+- **Emergency pause** mechanism in all contracts
+- **Role-based access control** (OpenZeppelin AccessControl)
+- **Fraud prevention** with velocity limits and blacklisting
+- **Multi-sig governance** with timelock delays (48h standard, 6h emergency)
+- **Oracle staking + slashing** for misbehavior prevention
+- **Withdrawal delays** (24h) to prevent flash attacks
+- **Batch size limits** (max 100 merchants) for gas safety
 
 ### Deployed Contracts (Paseo Testnet)
 
