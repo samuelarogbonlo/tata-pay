@@ -45,6 +45,8 @@
   "license": "MIT",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.4.0",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "@parity/hardhat-polkadot": "^0.1.10",
     "@parity/resolc": "^0.3.0",
     "hardhat": "^2.27.1",

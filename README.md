@@ -22,26 +22,6 @@ Blockchain payment settlement infrastructure for batch payments on Polkadot Asse
 - **Security**: OpenZeppelin Contracts
 - **Testnet**: Paseo (Chain ID: 420420422)
 
-## Quick Start
-
-```bash
-# Install
-npm install
-
-# Configure
-cp .env.example .env
-# Add your PRIVATE_KEY to .env
-
-# Compile
-npm run compile
-
-# Test (160 tests)
-npm test
-
-# Deploy to Paseo testnet
-npm run deploy:paseo
-```
-
 ## Architecture
 
 ```
@@ -64,32 +44,43 @@ Fintechs → CollateralPool → PaymentSettlement
 | `SettlementOracle` | Webhook auth, signature verification | 24 ✓ |
 | `TataPayGovernance` | Multi-sig timelock governance | 32 ✓ |
 
-## Key Commands
+## Testing
 
-```bash
-# Testing
-npm test                      # All tests
-npm run test:integration      # Integration tests only
-npm run test:coverage         # Coverage report
+See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation covering:
+- Settlement scenarios (happy path, partial claims, timeouts)
+- Edge cases (fraud limits, oracle signatures, governance)
+- 160 integration tests with 100% critical path coverage
 
-# Compilation
-npm run compile               # Compile to PVM bytecode
-npm run compile:clean         # Clean + compile
 
-# Deployment (Paseo)
-npm run deploy:collateral     # Deploy CollateralPool
-npm run deploy:fraud          # Deploy FraudPrevention
-npm run deploy:settlement     # Deploy PaymentSettlement
-npm run deploy:oracle         # Deploy SettlementOracle
-npm run deploy:governance     # Deploy TataPayGovernance
-npm run deploy:paseo          # Deploy all contracts
-```
+### Deployed Contracts (Paseo Testnet)
 
-## Testnet Setup
+**Status:** ✅ **LIVE ON PASEO ASSET HUB**
 
-1. Get PAS tokens: https://faucet.polkadot.io/?parachain=1111
-2. Set `PRIVATE_KEY` in `.env`
-3. Run `npm run deploy:paseo`
+**Network Details:**
+- **Network:** Paseo Asset Hub Testnet
+- **Chain ID:** 420420422
+- **RPC:** https://testnet-passet-hub-eth-rpc.polkadot.io
+- **Explorer:** https://blockscout-passet-hub.parity-testnet.parity.io
+- **Deployer:** 0x270a96208850d6Ce32c4fDFe9CB161Dba36f02f9
+- **Deployment Date:** December 4, 2025
+
+**Contract Addresses:**
+
+| Contract | Address | Explorer |
+|----------|---------|----------|
+| **CollateralPool** (UUPS Proxy) | [`0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9) |
+| CollateralPool Implementation | [`0x88E313E743ef842dB30CFd65F86Fe564C18119D0`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x88E313E743ef842dB30CFd65F86Fe564C18119D0) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x88E313E743ef842dB30CFd65F86Fe564C18119D0) |
+| **FraudPrevention** | [`0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f) |
+| **PaymentSettlement** | [`0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174) |
+| **SettlementOracle** | [`0xEB7278C528817fB51c1837Cb0666c02922d542F1`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEB7278C528817fB51c1837Cb0666c02922d542F1) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEB7278C528817fB51c1837Cb0666c02922d542F1) |
+| **TataPayGovernance** | [`0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260) |
+
+**Deployment Notes:**
+- CollateralPool deployed via UUPS upgradeable proxy pattern
+- All contracts compiled with `resolc` (Revive Solidity → PolkaVM compiler)
+- SettlementOracle uses role-based oracle calls (ECDSA removed for PolkaVM compatibility)
+- All inter-contract roles configured and verified
+- Contracts successfully verified on BlockScout explorer
 
 ## Governance
 

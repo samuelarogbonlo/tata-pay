@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@openzeppelin/hardhat-upgrades");
 require("dotenv").config();
 
 // Polyfill WebSocket for Node.js environment
@@ -14,10 +15,10 @@ module.exports = {
     version: "0.8.28",
     settings: {
       optimizer: {
-        enabled: process.env.ENABLE_OPTIMIZER !== "false",
-        runs: parseInt(process.env.OPTIMIZER_RUNS || "200"),
+        enabled: true,
+        runs: 1000, // Higher runs for deployment size optimization
       },
-      viaIR: false,
+      viaIR: true, // Enable intermediate representation for better optimization
     },
   },
 

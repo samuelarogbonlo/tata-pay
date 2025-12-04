@@ -4,8 +4,6 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./PaymentSettlement.sol";
 
 /**
@@ -13,10 +11,8 @@ import "./PaymentSettlement.sol";
  * @notice Oracle contract for verifying off-chain payment data
  *
  * Features:
- * - ECDSA signature verification for webhooks
  * - Oracle registration and management
- * - Batch approval/rejection via verified webhooks
- * - Nonce-based replay protection
+ * - Batch approval/rejection via registered oracle accounts
  * - Oracle staking and slashing
  * - Multi-oracle support with threshold consensus
  *
@@ -28,9 +24,6 @@ import "./PaymentSettlement.sol";
  * - Reentrancy protection
  */
 contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
-    using ECDSA for bytes32;
-    using MessageHashUtils for bytes32;
-
     // ============ Roles ============
 
     bytes32 public constant ORACLE_MANAGER_ROLE = keccak256("ORACLE_MANAGER_ROLE");
@@ -55,7 +48,6 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         bool approved;
         string reason;
         uint256 timestamp;
-        bytes signature;
     }
 
     // ============ State Variables ============
@@ -70,9 +62,6 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
     // Staking
     uint256 public minimumStake;
     uint256 public slashAmount;
-
-    // Nonce tracking for replay protection
-    mapping(address => uint256) public nonces;
 
     // Request tracking
     mapping(bytes32 => ApprovalRequest) public approvalRequests;
@@ -129,12 +118,6 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         bytes32 indexed batchId,
         address indexed oracle,
         string reason,
-        uint256 timestamp
-    );
-
-    event NonceUsed(
-        address indexed oracle,
-        uint256 nonce,
         uint256 timestamp
     );
 
@@ -232,37 +215,14 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
     /**
      * @notice Approve batch with signed message
      * @param batchId Batch ID to approve
-     * @param nonce Nonce for replay protection
-     * @param signature Oracle's signature
      */
     function approveBatch(
-        bytes32 batchId,
-        uint256 nonce,
-        bytes calldata signature
+        bytes32 batchId
     ) external nonReentrant whenNotPaused {
         OracleInfo storage info = oracles[msg.sender];
         require(info.isRegistered && info.isActive, "SettlementOracle: Not active oracle");
-        require(nonce == nonces[msg.sender], "SettlementOracle: Invalid nonce");
         require(!processedBatches[batchId], "SettlementOracle: Batch already processed");
         require(!batchVotes[batchId][msg.sender], "SettlementOracle: Already voted");
-
-        // Verify signature
-        bytes32 messageHash = keccak256(abi.encodePacked(
-            batchId,
-            true, // approved
-            nonce,
-            block.chainid,
-            address(this)
-        ));
-
-        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
-        address recovered = ethSignedMessageHash.recover(signature);
-
-        require(recovered == msg.sender, "SettlementOracle: Invalid signature");
-
-        // Increment nonce
-        nonces[msg.sender]++;
-        emit NonceUsed(msg.sender, nonce, block.timestamp);
 
         // Record vote
         batchVotes[batchId][msg.sender] = true;
@@ -278,8 +238,7 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
             oracle: msg.sender,
             approved: true,
             reason: "",
-            timestamp: block.timestamp,
-            signature: signature
+            timestamp: block.timestamp
         });
 
         emit BatchApproved(batchId, msg.sender, block.timestamp);
@@ -294,39 +253,15 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
      * @notice Reject batch with signed message and reason
      * @param batchId Batch ID to reject
      * @param reason Rejection reason
-     * @param nonce Nonce for replay protection
-     * @param signature Oracle's signature
      */
     function rejectBatch(
         bytes32 batchId,
-        string calldata reason,
-        uint256 nonce,
-        bytes calldata signature
+        string calldata reason
     ) external nonReentrant whenNotPaused {
         OracleInfo storage info = oracles[msg.sender];
         require(info.isRegistered && info.isActive, "SettlementOracle: Not active oracle");
-        require(nonce == nonces[msg.sender], "SettlementOracle: Invalid nonce");
         require(!processedBatches[batchId], "SettlementOracle: Batch already processed");
         require(!batchVotes[batchId][msg.sender], "SettlementOracle: Already voted");
-
-        // Verify signature
-        bytes32 messageHash = keccak256(abi.encodePacked(
-            batchId,
-            false, // rejected
-            keccak256(bytes(reason)),
-            nonce,
-            block.chainid,
-            address(this)
-        ));
-
-        bytes32 ethSignedMessageHash = messageHash.toEthSignedMessageHash();
-        address recovered = ethSignedMessageHash.recover(signature);
-
-        require(recovered == msg.sender, "SettlementOracle: Invalid signature");
-
-        // Increment nonce
-        nonces[msg.sender]++;
-        emit NonceUsed(msg.sender, nonce, block.timestamp);
 
         // Record vote
         batchVotes[batchId][msg.sender] = true;
@@ -342,8 +277,7 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
             oracle: msg.sender,
             approved: false,
             reason: reason,
-            timestamp: block.timestamp,
-            signature: signature
+            timestamp: block.timestamp
         });
 
         emit BatchRejected(batchId, msg.sender, reason, block.timestamp);
