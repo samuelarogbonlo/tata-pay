@@ -23,6 +23,20 @@ Blockchain payment settlement infrastructure for batch payments on Polkadot Asse
 - **Testnet**: Paseo (Chain ID: 420420422)
 = **Slither**: Used 0.11.3 for security review
 
+## Quick Start
+
+**Deploy Contracts:**
+See [DEPLOYMENT_WALKTHROUGH.md](DEPLOYMENT_WALKTHROUGH.md) for step-by-step deployment instructions.
+
+**Testnet Demo:**
+```bash
+npx hardhat run scripts/e2e/testnet-demo.js --network paseo
+```
+**Note:** Demo requires PAS tokens (for gas/stakes) and USDC tokens (for deposits). See [TESTNET_INTERACTION_GUIDE.md](TESTNET_INTERACTION_GUIDE.md) for prerequisites and troubleshooting.
+
+**Verify Deployment:**
+All contracts are already deployed and verified on Paseo. View on [BlockScout](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174).
+
 ## Architecture
 
 ```
