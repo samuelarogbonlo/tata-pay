@@ -99,10 +99,10 @@ async function main() {
   await pool.methods.grantRole(SETTLEMENT_ROLE, settlementAddress).send({ from: deployer.address, gas: 200000 });
   console.log("✅ CollateralPool: SETTLEMENT_ROLE → PaymentSettlement");
 
-  // Grant FRAUD_CHECKER_ROLE on FraudPrevention
-  const FRAUD_CHECKER_ROLE = await fraud.methods.FRAUD_CHECKER_ROLE().call();
-  await fraud.methods.grantRole(FRAUD_CHECKER_ROLE, deployer.address).send({ from: deployer.address, gas: 200000 });
-  console.log("✅ FraudPrevention: FRAUD_CHECKER_ROLE → deployer");
+  // Grant FRAUD_MANAGER_ROLE on FraudPrevention
+  const FRAUD_MANAGER_ROLE = await fraud.methods.FRAUD_MANAGER_ROLE().call();
+  await fraud.methods.grantRole(FRAUD_MANAGER_ROLE, settlementAddress).send({ from: deployer.address, gas: 200000 });
+  console.log("✅ FraudPrevention: FRAUD_MANAGER_ROLE → PaymentSettlement");
 
   console.log("\n⚠️  Note: Oracles must register themselves via registerOracle() with stake");
 
