@@ -16,26 +16,35 @@ Blockchain payment settlement infrastructure for batch payments on Polkadot Asse
 
 ## Tech Stack
 
-- **Platform**: Polkadot Asset Hub (PolkaVM)
-- **Language**: Solidity 0.8.28 → PVM bytecode via Revive (resolc)
-- **Framework**: Hardhat + @parity/hardhat-polkadot
+- **Platform**: Moonbeam (EVM-compatible Polkadot parachain)
+- **Language**: Solidity 0.8.28
+- **Framework**: Hardhat with Web3.js
 - **Security**: OpenZeppelin Contracts
-- **Testnet**: Paseo (Chain ID: 420420422)
-= **Slither**: Used 0.11.3 for security review
+- **Testnet**: Moonbase Alpha (Chain ID: 1287)
+- **Slither**: Used 0.11.3 for security review
 
 ## Quick Start
 
-**Deploy Contracts:**
-See [DEPLOYMENT_WALKTHROUGH.md](DEPLOYMENT_WALKTHROUGH.md) for step-by-step deployment instructions.
-
-**Testnet Demo:**
+**Setup:**
 ```bash
-npx hardhat run scripts/e2e/testnet-demo.js --network paseo
+npm install
+cp .env.example .env
+# Fill in your private keys in .env
 ```
-**Note:** Demo requires PAS tokens (for gas/stakes) and USDC tokens (for deposits). See [TESTNET_INTERACTION_GUIDE.md](TESTNET_INTERACTION_GUIDE.md) for prerequisites and troubleshooting.
 
-**Verify Deployment:**
-All contracts are already deployed and verified on Paseo. View on [BlockScout](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174).
+**Deploy Contracts:**
+```bash
+node scripts/deploy/deploy-all.js
+```
+
+**Run E2E Test:**
+```bash
+node scripts/e2e/complete-flow.js
+```
+
+**Note:** Requires DEV tokens (for gas) from [Moonbeam Faucet](https://faucet.moonbeam.network/) and test USDC (deployed via SimpleUSDC.sol).
+
+**For detailed deployment and testing instructions**, see [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) - comprehensive guide covering fresh deployment, interaction with deployed contracts, and E2E acceptance criteria.
 
 ## Architecture
 
@@ -66,7 +75,7 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation
 - Edge cases (fraud limits, role-based oracle authorization, governance)
 - 152 integration tests with 100% critical path coverage
 
-**Note:** Mock contracts (`MockUSDC`, `MaliciousReentrancy`) are used exclusively for local testing and attack simulations; all deployed contracts use real Asset Hub USDC precompile (Asset ID 1337).
+**Note:** Mock contracts (`MockUSDC`, `SimpleUSDC`, `MaliciousReentrancy`) are used for testnet deployment and attack simulations. Production deployment will use real USDC (0x818ec0A7Fe18Ff94269904fCED6AE3DaE6d6dC0b on Moonbeam mainnet).
 
 ## Security
 
@@ -92,35 +101,34 @@ Comprehensive security validation completed for production readiness:
 - **Withdrawal delays** (24h) to prevent flash attacks
 - **Batch size limits** (max 100 merchants) for gas safety
 
-### Deployed Contracts (Paseo Testnet)
+### Deployed Contracts (Moonbase Alpha Testnet)
 
-**Status:** ✅ **LIVE ON PASEO ASSET HUB**
+**Status:** ✅ **LIVE ON MOONBASE ALPHA**
 
 **Network Details:**
-- **Network:** Paseo Asset Hub Testnet
-- **Chain ID:** 420420422
-- **RPC:** https://testnet-passet-hub-eth-rpc.polkadot.io
-- **Explorer:** https://blockscout-passet-hub.parity-testnet.parity.io
-- **Deployer:** 0x270a96208850d6Ce32c4fDFe9CB161Dba36f02f9
-- **Deployment Date:** December 4, 2025
+- **Network:** Moonbase Alpha Testnet
+- **Chain ID:** 1287
+- **RPC:** https://moonbase.unitedbloc.com
+- **Explorer:** https://moonbase.moonscan.io
+- **Faucet:** https://faucet.moonbeam.network/
+- **Deployment Date:** December 18, 2025
 
 **Contract Addresses:**
 
 | Contract | Address | Explorer |
 |----------|---------|----------|
-| **CollateralPool** (UUPS Proxy) | [`0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xB4dAbce9bd76355B80D7FcB86C084d710838c8d9) |
-| CollateralPool Implementation | [`0x88E313E743ef842dB30CFd65F86Fe564C18119D0`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x88E313E743ef842dB30CFd65F86Fe564C18119D0) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x88E313E743ef842dB30CFd65F86Fe564C18119D0) |
-| **FraudPrevention** | [`0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xC377f75e93cbE9872fAc18B34Dd9310f65B0492f) |
-| **PaymentSettlement** | [`0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x414F5e5747a1b3f67cC27E3b5e9432beaeBE4174) |
-| **SettlementOracle** | [`0xEB7278C528817fB51c1837Cb0666c02922d542F1`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEB7278C528817fB51c1837Cb0666c02922d542F1) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEB7278C528817fB51c1837Cb0666c02922d542F1) |
-| **TataPayGovernance** | [`0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260`](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260) | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xEbCd6af8835513B78AF0567f0Ae61d4766ea3260) |
+| **SimpleUSDC** (Mock USDC) | `0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603` | [View →](https://moonbase.moonscan.io/address/0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603) |
+| **CollateralPool** | `0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9` | [View →](https://moonbase.moonscan.io/address/0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9) |
+| **PaymentSettlement** | `0xE596d1382cD7488eF8dB13B347bAdc6781110d30` | [View →](https://moonbase.moonscan.io/address/0xE596d1382cD7488eF8dB13B347bAdc6781110d30) |
+| **FraudPrevention** | `0xc08eCE74fAB86680f758Fa5E169E767E076a7b56` | [View →](https://moonbase.moonscan.io/address/0xc08eCE74fAB86680f758Fa5E169E767E076a7b56) |
+| **SettlementOracle** | `0xdBa042E41871BBA66e290209Bff79a86CfB9a58e` | [View →](https://moonbase.moonscan.io/address/0xdBa042E41871BBA66e290209Bff79a86CfB9a58e) |
+| **TataPayGovernance** | `0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B` | [View →](https://moonbase.moonscan.io/address/0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B) |
 
 **Deployment Notes:**
-- CollateralPool deployed via UUPS upgradeable proxy pattern
-- All contracts compiled with `resolc` (Revive Solidity → PolkaVM compiler)
-- SettlementOracle uses role-based oracle calls (ECDSA removed for PolkaVM compatibility)
+- Standard EVM deployment (no PolkaVM/Revive required)
 - All inter-contract roles configured and verified
-- Contracts successfully verified on BlockScout explorer
+- Working E2E flow: deposit → batch → oracle approve → merchant claim → settle
+- SimpleUSDC used for testnet; production will use real USDC on Moonbeam mainnet
 
 ## Governance
 

@@ -7,50 +7,45 @@ if (typeof WebSocket === 'undefined') {
   global.WebSocket = require('ws');
 }
 
-require("@parity/hardhat-polkadot");
-
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
     version: "0.8.28",
     settings: {
       optimizer: {
-        enabled: true,
-        runs: 1000, // Higher runs for deployment size optimization
-      },
-      viaIR: true, // Enable intermediate representation for better optimization
-    },
-  },
-
-  resolc: {
-    version: "0.3.0", // Must match installed @parity/resolc version
-    compilerSource: "npm",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
+        enabled: process.env.ENABLE_OPTIMIZER !== 'false',
+        runs: parseInt(process.env.OPTIMIZER_RUNS || '200'),
       },
     },
   },
 
   networks: {
-    // Default hardhat network for unit tests (no PolkaVM)
+    // Default hardhat network for unit tests
     hardhat: {
       chainId: 31337,
     },
 
-    // Local development node with PolkaVM
-    localNode: {
-      polkavm: true,
-      url: "http://127.0.0.1:8545",
-      chainId: 31337,
+    // Moonbase Alpha (Moonbeam Testnet) - Full EVM compatibility
+    moonbase: {
+      url: process.env.MOONBASE_RPC_URL || "https://moonbase.unitedbloc.com",
+      chainId: 1287,
+      accounts: [
+        process.env.PRIVATE_KEY,
+        process.env.ORACLE1_PRIVATE_KEY,
+        process.env.ORACLE2_PRIVATE_KEY,
+        process.env.MERCHANT1_PRIVATE_KEY,
+        process.env.MERCHANT2_PRIVATE_KEY,
+        process.env.MERCHANT3_PRIVATE_KEY,
+      ].filter(key => key && key !== '0x0000000000000000000000000000000000000000000000000000000000000000'),
+      gasPrice: "auto",
+      gas: "auto",
+      timeout: 60000,
     },
 
-    // Paseo Asset Hub Testnet (PVM)
-    paseo: {
-      polkavm: true,
-      url: process.env.PASEO_RPC_URL || "https://testnet-passet-hub-eth-rpc.polkadot.io",
-      chainId: parseInt(process.env.PASEO_CHAIN_ID || "420420422"),
+    // Moonbeam Mainnet
+    moonbeam: {
+      url: process.env.MOONBEAM_RPC_URL || "https://rpc.api.moonbeam.network",
+      chainId: 1284,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       gasPrice: "auto",
       gas: "auto",
@@ -66,7 +61,7 @@ module.exports = {
   },
 
   mocha: {
-    timeout: 120000, // 2 minutes for PolkaVM tests
+    timeout: 120000, // 2 minutes for complex tests
   },
 
   gasReporter: {
@@ -78,15 +73,16 @@ module.exports = {
 
   etherscan: {
     apiKey: {
-      paseo: "no-api-key-needed", // BlockScout doesn't require API key
+      moonbaseAlpha: process.env.MOONSCAN_API_KEY || "no-api-key-needed",
+      moonbeam: process.env.MOONSCAN_API_KEY || "no-api-key-needed",
     },
     customChains: [
       {
-        network: "paseo",
-        chainId: 420420422,
+        network: "moonbaseAlpha",
+        chainId: 1287,
         urls: {
-          apiURL: "https://blockscout-passet-hub.parity-testnet.parity.io/api",
-          browserURL: "https://blockscout-passet-hub.parity-testnet.parity.io",
+          apiURL: "https://api-moonbase.moonscan.io/api",
+          browserURL: "https://moonbase.moonscan.io",
         },
       },
     ],
