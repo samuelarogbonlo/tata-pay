@@ -16,11 +16,11 @@ Blockchain payment settlement infrastructure for batch payments on Polkadot Asse
 
 ## Tech Stack
 
-- **Platform**: Moonbeam (EVM-compatible Polkadot parachain)
+- **Platform**: Polkadot Asset Hub (EVM-compatible via pallet_revive)
 - **Language**: Solidity 0.8.28
-- **Framework**: Hardhat with Web3.js
+- **Framework**: Hardhat with ethers.js
 - **Security**: OpenZeppelin Contracts
-- **Testnet**: Moonbase Alpha (Chain ID: 1287)
+- **Testnet**: Paseo Asset Hub (Chain ID: 420420422)
 - **Slither**: Used 0.11.3 for security review
 
 ## Quick Start
@@ -42,7 +42,7 @@ node scripts/deploy/deploy-all.js
 node scripts/e2e/complete-flow.js
 ```
 
-**Note:** Requires DEV tokens (for gas) from [Moonbeam Faucet](https://faucet.moonbeam.network/) and test USDC (deployed via SimpleUSDC.sol).
+**Note:** Requires PAS tokens (for gas) from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111) and test USDC (deployed via SimpleUSDC.sol). **IMPORTANT:** Asset Hub requires 1000 gwei gas price.
 
 **For detailed deployment and testing instructions**, see [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) - comprehensive guide covering fresh deployment, interaction with deployed contracts, and E2E acceptance criteria.
 
@@ -75,7 +75,7 @@ See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing documentation
 - Edge cases (fraud limits, role-based oracle authorization, governance)
 - 152 integration tests with 100% critical path coverage
 
-**Note:** Mock contracts (`MockUSDC`, `SimpleUSDC`, `MaliciousReentrancy`) are used for testnet deployment and attack simulations. Production deployment will use real USDC (0x818ec0A7Fe18Ff94269904fCED6AE3DaE6d6dC0b on Moonbeam mainnet).
+**Note:** Mock contracts (`MockUSDC`, `SimpleUSDC`, `MaliciousReentrancy`) are used for testnet deployment and attack simulations. Production deployment will use real USDC (Asset ID 1337 on Polkadot Asset Hub mainnet, precompile address: 0xFFFFFFFF00000539).
 
 ## Security
 
@@ -101,34 +101,36 @@ Comprehensive security validation completed for production readiness:
 - **Withdrawal delays** (24h) to prevent flash attacks
 - **Batch size limits** (max 100 merchants) for gas safety
 
-### Deployed Contracts (Moonbase Alpha Testnet)
+### Deployed Contracts (Paseo Asset Hub Testnet)
 
-**Status:** ✅ **LIVE ON MOONBASE ALPHA**
+**Status:** ✅ **LIVE ON PASEO ASSET HUB**
 
 **Network Details:**
-- **Network:** Moonbase Alpha Testnet
-- **Chain ID:** 1287
-- **RPC:** https://moonbase.unitedbloc.com
-- **Explorer:** https://moonbase.moonscan.io
-- **Faucet:** https://faucet.moonbeam.network/
-- **Deployment Date:** December 18, 2025
+- **Network:** Paseo Asset Hub Testnet
+- **Chain ID:** 420420422
+- **RPC:** https://testnet-passet-hub-eth-rpc.polkadot.io
+- **Explorer:** https://blockscout-passet-hub.parity-testnet.parity.io
+- **Faucet:** https://faucet.polkadot.io/?parachain=1111
+- **Deployment Date:** January 7, 2026
+- **Gas Price:** 1000 gwei (REQUIRED!)
 
 **Contract Addresses:**
 
 | Contract | Address | Explorer |
 |----------|---------|----------|
-| **SimpleUSDC** (Mock USDC) | `0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603` | [View →](https://moonbase.moonscan.io/address/0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603) |
-| **CollateralPool** | `0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9` | [View →](https://moonbase.moonscan.io/address/0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9) |
-| **PaymentSettlement** | `0xE596d1382cD7488eF8dB13B347bAdc6781110d30` | [View →](https://moonbase.moonscan.io/address/0xE596d1382cD7488eF8dB13B347bAdc6781110d30) |
-| **FraudPrevention** | `0xc08eCE74fAB86680f758Fa5E169E767E076a7b56` | [View →](https://moonbase.moonscan.io/address/0xc08eCE74fAB86680f758Fa5E169E767E076a7b56) |
-| **SettlementOracle** | `0xdBa042E41871BBA66e290209Bff79a86CfB9a58e` | [View →](https://moonbase.moonscan.io/address/0xdBa042E41871BBA66e290209Bff79a86CfB9a58e) |
-| **TataPayGovernance** | `0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B` | [View →](https://moonbase.moonscan.io/address/0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B) |
+| **SimpleUSDC** (Mock USDC) | `0xd1bBE61C683B339dE9733b928616C1594e770A3c` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xd1bBE61C683B339dE9733b928616C1594e770A3c) |
+| **CollateralPool** | `0x1FCd386a00777A469e7C6993FB7E0f9515DB1bFc` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x1FCd386a00777A469e7C6993FB7E0f9515DB1bFc) |
+| **PaymentSettlement** | `0x4B4280B2277e6F15CF4d7fC6Bd6BFAd1144AE9DF` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x4B4280B2277e6F15CF4d7fC6Bd6BFAd1144AE9DF) |
+| **FraudPrevention** | `0x3F21Eb25bf4dBeC4cAfBD51fb0b5fD9685e66610` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x3F21Eb25bf4dBeC4cAfBD51fb0b5fD9685e66610) |
+| **SettlementOracle** | `0x94F205EAB260d227Cb8591082125144bA76E6d6A` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0x94F205EAB260d227Cb8591082125144bA76E6d6A) |
+| **TataPayGovernance** | `0xb9A64476CFCD47127d80C6056E7F09D9E9A8BD11` | [View →](https://blockscout-passet-hub.parity-testnet.parity.io/address/0xb9A64476CFCD47127d80C6056E7F09D9E9A8BD11) |
 
 **Deployment Notes:**
-- Standard EVM deployment (no PolkaVM/Revive required)
+- Deployed via pallet_revive (Asset Hub's EVM compatibility layer)
 - All inter-contract roles configured and verified
 - Working E2E flow: deposit → batch → oracle approve → merchant claim → settle
-- SimpleUSDC used for testnet; production will use real USDC on Moonbeam mainnet
+- SimpleUSDC used for testnet; production will use native USDC (Asset ID 1337)
+- **Critical:** Must use 1000 gwei gas price for all transactions
 
 ## Governance
 

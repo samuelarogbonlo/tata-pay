@@ -6,43 +6,46 @@ require("dotenv").config();
  */
 
 module.exports = {
-  moonbase: {
-    name: "Moonbase Alpha",
-    rpcUrl: process.env.MOONBASE_RPC_URL || "https://moonbase.unitedbloc.com",
-    chainId: 1287,
+  paseo: {
+    name: "Paseo Asset Hub",
+    rpcUrl: process.env.PASEO_RPC_URL || "https://testnet-passet-hub-eth-rpc.polkadot.io",
+    chainId: 420420422,
+    gasPrice: 1000000000000, // 1000 gwei - REQUIRED for Asset Hub!
     contracts: {
-      usdc: process.env.MOCK_USDC_ADDRESS || "0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603",
-      collateralPool: process.env.COLLATERAL_POOL_ADDRESS || "0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9",
-      paymentSettlement: process.env.PAYMENT_SETTLEMENT_ADDRESS || "0xE596d1382cD7488eF8dB13B347bAdc6781110d30",
-      fraudPrevention: process.env.FRAUD_PREVENTION_ADDRESS || "0xc08eCE74fAB86680f758Fa5E169E767E076a7b56",
-      settlementOracle: process.env.SETTLEMENT_ORACLE_ADDRESS || "0xdBa042E41871BBA66e290209Bff79a86CfB9a58e",
-      governance: process.env.TATAPAY_GOVERNANCE_ADDRESS || "0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B"
+      usdc: process.env.MOCK_USDC_ADDRESS || "0xd1bBE61C683B339dE9733b928616C1594e770A3c",
+      collateralPool: process.env.COLLATERAL_POOL_ADDRESS || "0x1FCd386a00777A469e7C6993FB7E0f9515DB1bFc",
+      paymentSettlement: process.env.PAYMENT_SETTLEMENT_ADDRESS || "0x4B4280B2277e6F15CF4d7fC6Bd6BFAd1144AE9DF",
+      fraudPrevention: process.env.FRAUD_PREVENTION_ADDRESS || "0x3F21Eb25bf4dBeC4cAfBD51fb0b5fD9685e66610",
+      settlementOracle: process.env.SETTLEMENT_ORACLE_ADDRESS || "0x94F205EAB260d227Cb8591082125144bA76E6d6A",
+      governance: process.env.TATAPAY_GOVERNANCE_ADDRESS || "0xb9A64476CFCD47127d80C6056E7F09D9E9A8BD11"
     },
-    explorer: "https://moonbase.moonscan.io",
-    faucet: "https://faucet.moonbeam.network/",
+    explorer: "https://blockscout-passet-hub.parity-testnet.parity.io",
+    faucet: "https://faucet.polkadot.io/?parachain=1111",
     nativeCurrency: {
-      name: "DEV",
-      symbol: "DEV",
+      name: "PAS",
+      symbol: "PAS",
       decimals: 18
     }
   },
 
-  moonbeam: {
-    name: "Moonbeam Mainnet",
-    rpcUrl: process.env.MOONBEAM_RPC_URL || "https://rpc.api.moonbeam.network",
-    chainId: 1284,
+  westend: {
+    name: "Westend Asset Hub",
+    rpcUrl: process.env.WESTEND_RPC_URL || "https://westend-asset-hub-eth-rpc.polkadot.io",
+    chainId: 420420421,
+    gasPrice: 1000000000000, // 1000 gwei - REQUIRED for Asset Hub!
     contracts: {
-      usdc: "0x818ec0A7Fe18Ff94269904fCED6AE3DaE6d6dC0b", // Real USDC on Moonbeam
+      usdc: process.env.MOCK_USDC_ADDRESS,
       collateralPool: process.env.COLLATERAL_POOL_ADDRESS,
       paymentSettlement: process.env.PAYMENT_SETTLEMENT_ADDRESS,
       fraudPrevention: process.env.FRAUD_PREVENTION_ADDRESS,
       settlementOracle: process.env.SETTLEMENT_ORACLE_ADDRESS,
       governance: process.env.TATAPAY_GOVERNANCE_ADDRESS
     },
-    explorer: "https://moonscan.io",
+    explorer: "https://westend-asset-hub-eth-explorer.parity.io",
+    faucet: "https://faucet.polkadot.io/westend",
     nativeCurrency: {
-      name: "GLMR",
-      symbol: "GLMR",
+      name: "WND",
+      symbol: "WND",
       decimals: 18
     }
   }
@@ -50,13 +53,13 @@ module.exports = {
 
 /**
  * Get network config by name
- * @param {string} networkName - 'moonbase' or 'moonbeam'
+ * @param {string} networkName - 'paseo' or 'westend'
  * @returns {object} Network configuration
  */
-module.exports.getNetwork = function(networkName = 'moonbase') {
+module.exports.getNetwork = function(networkName = 'paseo') {
   const config = module.exports[networkName];
   if (!config) {
-    throw new Error(`Unknown network: ${networkName}. Use 'moonbase' or 'moonbeam'`);
+    throw new Error(`Unknown network: ${networkName}. Use 'paseo' or 'westend'`);
   }
   return config;
 };

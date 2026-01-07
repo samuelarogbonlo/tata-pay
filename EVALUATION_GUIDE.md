@@ -1,8 +1,8 @@
 # TataPay - W3F M1 Evaluation Guide
 
-**Version**: 1.0
-**Date**: 2025-12-18
-**Network**: Moonbase Alpha (Moonbeam Testnet)
+**Version**: 2.0
+**Date**: 2026-01-07
+**Network**: Paseo Asset Hub (Polkadot Testnet)
 **Purpose**: Complete testing guide for W3F Milestone 1 evaluation
 
 This guide provides two testing paths:
@@ -15,7 +15,8 @@ This guide provides two testing paths:
 
 - Node.js v18+ and npm
 - Git
-- DEV tokens from [Moonbeam Faucet](https://faucet.moonbeam.network/)
+- PAS tokens from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111)
+- **IMPORTANT**: Asset Hub requires 1000 gwei gas price!
 
 ---
 
@@ -34,7 +35,7 @@ cp .env.example .env
 
 ---
 
-## Option A: Fresh Deployment to Moonbase Alpha
+## Option A: Fresh Deployment to Paseo Asset Hub
 
 ### 1. Configure Test Accounts
 
@@ -47,10 +48,12 @@ You can use the existing test keys from `.env.example` or generate new ones.
 
 ### 2. Fund Accounts
 
-Visit [Moonbeam Faucet](https://faucet.moonbeam.network/) and request DEV tokens for:
-- Deployer address (~10 DEV for deployment)
-- Oracle1 address (~1 DEV for transactions)
-- Merchant1 address (~0.5 DEV for claims)
+Visit [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111) and request PAS tokens for:
+- Deployer address (~5000 PAS for deployment with 1000 gwei gas)
+- Oracle1 address (~500 PAS for transactions)
+- Merchant1 address (~100 PAS for claims)
+
+**Note**: Asset Hub requires high gas prices. With 1000 gwei, deployment is more expensive than standard EVM chains.
 
 ### 3. Deploy All Contracts
 
@@ -58,32 +61,20 @@ Visit [Moonbeam Faucet](https://faucet.moonbeam.network/) and request DEV tokens
 node scripts/deploy/deploy-all.js
 ```
 
-This deploys all 6 contracts and outputs their addresses. Copy the addresses to your `.env` file.
+This deploys all 6 contracts and outputs their addresses. The addresses are automatically used from `config/networks.js`.
 
-### 4. Grant Oracle Role
-
-```bash
-node scripts/utils/grant-oracle-role.js
-```
-
-This grants `ORACLE_ROLE` to Oracle1 on PaymentSettlement.
-
-### 5. Mint Test USDC
-
-SimpleUSDC has a public `mint()` function. Call it via Hardhat console to mint 1,000,000 USDC to your deployer address.
+### 4. Setup Deployment (Grant Roles + Mint USDC + Deposit Collateral)
 
 ```bash
-npx hardhat console --network moonbase
-# Then call mint() function on SimpleUSDC contract
+node scripts/utils/setup-fresh-deployment.js
 ```
 
-### 6. Deposit Collateral
+This script:
+- Grants `ORACLE_ROLE` to Oracle1 on PaymentSettlement
+- Mints 1,000,000 USDC to deployer
+- Deposits 100,000 USDC as collateral
 
-Use Hardhat console to:
-1. Approve CollateralPool to spend USDC
-2. Call `deposit()` to deposit 100,000 USDC
-
-### 7. Run E2E Test
+### 5. Run E2E Test
 
 ```bash
 node scripts/e2e/complete-flow.js
@@ -105,33 +96,30 @@ cp .env.example .env
 
 Add your test private keys to `.env`.
 
-**Pre-deployed Contracts** (Moonbase Alpha):
-- SimpleUSDC: `0x3ee3AcA42AC2D8194Ebb52eEAc4EFa44f0775603`
-- CollateralPool: `0x1dADeb1b5A07582399D4DEcBac045A3b6a0D82E9`
-- PaymentSettlement: `0xE596d1382cD7488eF8dB13B347bAdc6781110d30`
-- FraudPrevention: `0xc08eCE74fAB86680f758Fa5E169E767E076a7b56`
-- SettlementOracle: `0xdBa042E41871BBA66e290209Bff79a86CfB9a58e`
-- TataPayGovernance: `0xA64e6ac9A8D6cbf2d239B9E00152812E0fEf7C2B`
+**Pre-deployed Contracts** (Paseo Asset Hub):
+- SimpleUSDC: `0xd1bBE61C683B339dE9733b928616C1594e770A3c`
+- CollateralPool: `0x1FCd386a00777A469e7C6993FB7E0f9515DB1bFc`
+- PaymentSettlement: `0x4B4280B2277e6F15CF4d7fC6Bd6BFAd1144AE9DF`
+- FraudPrevention: `0x3F21Eb25bf4dBeC4cAfBD51fb0b5fD9685e66610`
+- SettlementOracle: `0x94F205EAB260d227Cb8591082125144bA76E6d6A`
+- TataPayGovernance: `0xb9A64476CFCD47127d80C6056E7F09D9E9A8BD11`
+
+Block Explorer: https://blockscout-passet-hub.parity-testnet.parity.io
 
 ### 2. Fund Your Test Accounts
 
-Request DEV tokens from [Moonbeam Faucet](https://faucet.moonbeam.network/) for your test accounts.
+Request PAS tokens from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111) for your test accounts.
 
-### 3. Mint Test USDC
+### 3. Setup and Run E2E Test
 
-Call `mint()` on SimpleUSDC contract via Hardhat console to mint 1,000,000 USDC.
-
-### 4. Deposit Collateral
-
-Use Hardhat console to approve and deposit 100,000 USDC into CollateralPool.
-
-### 5. Run E2E Test
+The setup script handles everything (minting USDC, depositing collateral, granting roles):
 
 ```bash
+node scripts/utils/setup-fresh-deployment.js
 node scripts/e2e/complete-flow.js
 ```
 
-**Note**: For testing with our deployment, oracle role is already granted to our oracle address. You'll need to either use our oracle key or deploy your own contracts (Option A).
+**Note**: The setup script uses the deployed contract addresses from `.env` and sets up everything automatically.
 
 ---
 
@@ -186,31 +174,39 @@ Fintech deposits collateral → Creates batch → Oracle approves → Merchant c
 ### Expected Console Output
 
 ```
-🎯 Complete E2E Flow - Moonbase Alpha
+🎯 Complete E2E Flow - Paseo Asset Hub
+
+Accounts:
+  Fintech:   0x270a96208850d6Ce32c4fDFe9CB161Dba36f02f9
+  Oracle1:   0x3b5C2bDd1D8251C38F80C4EdE9fbD1680a66Db1c
+  Merchant1: 0xe5e740A8672db5636Ec8255C6047b0D6f23F99f8
 
 1️⃣  Checking collateral...
-   Available: 100000 USDC
+   Available: 100000.0 USDC
+   Locked: 0.0 USDC
 
 2️⃣  Creating payment batch...
-   ✅ Batch created: 0x7a8b9c...
-   Verified - Amount: 2000 USDC
-   Verified - Status: 0 (Pending)
+   ✅ Batch created: 0xdd235b8e...
+   Tx: 0xe21c5290...
 
 3️⃣  Oracle1 approving batch...
    Oracle1 has ORACLE_ROLE: true
    ✅ Batch approved!
-   New status: 1 (Processing)
+   Tx: 0x2db995e3...
 
 4️⃣  Merchant claiming payment...
+   Merchant balance before: 0.0 USDC
    ✅ Payment claimed!
-   Received: 2000 USDC ✅
+   Tx: 0xcaba99bd...
+   Merchant balance after: 2000.0 USDC
+   Received: 2000.0 USDC ✅
 
 5️⃣  Final status...
-   Batch status: 2 (Settled)
-   Claimed: 1/1
+   Batch status: Settled
+   Total amount: 2000.0 USDC
 
 ═══════════════════════════════════════
-   TEST COMPLETE ✅
+   E2E TEST COMPLETE ✅
 ═══════════════════════════════════════
 ```
 
@@ -218,7 +214,7 @@ Fintech deposits collateral → Creates batch → Oracle approves → Merchant c
 
 ## Verification on Block Explorer
 
-All transactions can be verified on [Moonbase Moonscan](https://moonbase.moonscan.io):
+All transactions can be verified on [Paseo Asset Hub Blockscout](https://blockscout-passet-hub.parity-testnet.parity.io):
 
 ---
 
@@ -241,17 +237,20 @@ This runs **152 integration tests** covering:
 
 ## Troubleshooting
 
+**Issue: "Error 1010: Invalid Transaction"**
+- **Solution**: Asset Hub requires **1000 gwei gas price**. This is already configured in `hardhat.config.js` and `config/networks.js`. If using custom scripts, ensure you set: `gasPrice: ethers.parseUnits('1000', 'gwei')`
+
 **Issue: "Insufficient balance"**
-- Solution: Mint test USDC via Hardhat console
+- Solution: Run the setup script: `node scripts/utils/setup-fresh-deployment.js`
 
 **Issue: "Oracle does not have ORACLE_ROLE"**
-- Solution: Run `node scripts/utils/grant-oracle-role.js`
+- Solution: The setup script grants this role automatically. If needed manually: check contract addresses in `.env`
 
 **Issue: "Batch not found"**
 - Solution: Ensure you're using `batchId` extracted from `BatchCreated` event
 
-**Issue: RPC timeout**
-- Solution: Use UnitedBloc RPC in `.env`: `MOONBASE_RPC_URL=https://moonbase.unitedbloc.com`
+**Issue: RPC timeout or instability**
+- Solution: The official Parity RPC is stable. If issues persist, check [Polkadot Forum](https://forum.polkadot.network/) for alternative endpoints
 
 
 **Built for Africa's financial inclusion**

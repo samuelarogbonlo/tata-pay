@@ -1,21 +1,20 @@
-const { Web3 } = require("web3");
+const { ethers } = require("ethers");
 require("dotenv").config();
 const networks = require("../../config/networks");
 
 async function main() {
-  const network = networks.getNetwork("moonbase");
-  const web3 = new Web3(network.rpcUrl);
-  const deployer = web3.eth.accounts.privateKeyToAccount(process.env.PRIVATE_KEY);
-  const oracle1 = web3.eth.accounts.privateKeyToAccount(process.env.ORACLE1_PRIVATE_KEY);
-  const oracle2 = web3.eth.accounts.privateKeyToAccount(process.env.ORACLE2_PRIVATE_KEY);
+  const network = networks.getNetwork("paseo");
+  const provider = new ethers.JsonRpcProvider(network.rpcUrl);
+  const deployer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
-  web3.eth.accounts.wallet.add(deployer);
-  web3.eth.accounts.wallet.add(oracle1);
-  web3.eth.accounts.wallet.add(oracle2);
-
-  console.log("\n🚀 Deploying TataPay to Moonbase Alpha");
+  console.log("\n🚀 Deploying TataPay to Paseo Asset Hub");
   console.log("📍 Deployer:", deployer.address);
-  console.log("💰 Balance:", web3.utils.fromWei(await web3.eth.getBalance(deployer.address), "ether"), "DEV\n");
+  const balance = await provider.getBalance(deployer.address);
+  console.log("💰 Balance:", ethers.formatEther(balance), "PAS\n");
+
+  // Gas configuration for Asset Hub (1000 gwei required!)
+  const gasPrice = ethers.parseUnits('1000', 'gwei');
+  const gasConfig = { gasPrice };
 
   // Load artifacts
   const SimpleUSDC = require("../../artifacts/contracts/mocks/SimpleUSDC.sol/SimpleUSDC.json");
@@ -25,69 +24,60 @@ async function main() {
   const PaymentSettlement = require("../../artifacts/contracts/core/PaymentSettlement.sol/PaymentSettlement.json");
   const TataPayGovernance = require("../../artifacts/contracts/core/TataPayGovernance.sol/TataPayGovernance.json");
 
-  const delay = () => new Promise(r => setTimeout(r, 3000));
+  const delay = () => new Promise(r => setTimeout(r, 5000)); // Longer delay for Asset Hub
 
   // 1. Deploy SimpleUSDC
   console.log("1️⃣  Deploying SimpleUSDC...");
-  const usdcContract = new web3.eth.Contract(SimpleUSDC.abi);
-  const usdc = await usdcContract.deploy({ data: SimpleUSDC.bytecode }).send({ from: deployer.address, gas: 2000000 });
-  const usdcAddress = usdc.options.address;
+  const usdcFactory = new ethers.ContractFactory(SimpleUSDC.abi, SimpleUSDC.bytecode, deployer);
+  const usdc = await usdcFactory.deploy({ ...gasConfig, gasLimit: 2000000 });
+  await usdc.waitForDeployment();
+  const usdcAddress = await usdc.getAddress();
   console.log("✅ SimpleUSDC:", usdcAddress);
   await delay();
 
   // 2. Deploy CollateralPool
   console.log("\n2️⃣  Deploying CollateralPool...");
-  const poolContract = new web3.eth.Contract(CollateralPool.abi);
-  const pool = await poolContract.deploy({
-    data: CollateralPool.bytecode,
-    arguments: [usdcAddress, deployer.address, deployer.address]
-  }).send({ from: deployer.address, gas: 3000000 });
-  const poolAddress = pool.options.address;
+  const poolFactory = new ethers.ContractFactory(CollateralPool.abi, CollateralPool.bytecode, deployer);
+  const pool = await poolFactory.deploy(usdcAddress, deployer.address, deployer.address, { ...gasConfig, gasLimit: 3000000 });
+  await pool.waitForDeployment();
+  const poolAddress = await pool.getAddress();
   console.log("✅ CollateralPool:", poolAddress);
   await delay();
 
-  // 3. Deploy SettlementOracle (with temporary payment settlement address)
+  // 3. Deploy SettlementOracle
   console.log("\n3️⃣  Deploying SettlementOracle...");
-  const oracleContract = new web3.eth.Contract(SettlementOracle.abi);
-  const MIN_STAKE = web3.utils.toWei("100", "ether"); // 100 USDC (6 decimals, but using ether for simplicity)
-  const oracle = await oracleContract.deploy({
-    data: SettlementOracle.bytecode,
-    arguments: [deployer.address, deployer.address, MIN_STAKE] // Temporary payment settlement = deployer
-  }).send({ from: deployer.address, gas: 6000000 }); // Increased gas
-  const oracleAddress = oracle.options.address;
+  const oracleFactory = new ethers.ContractFactory(SettlementOracle.abi, SettlementOracle.bytecode, deployer);
+  const MIN_STAKE = ethers.parseUnits("100", 6); // 100 USDC (6 decimals)
+  const oracle = await oracleFactory.deploy(deployer.address, deployer.address, MIN_STAKE, { ...gasConfig, gasLimit: 6000000 });
+  await oracle.waitForDeployment();
+  const oracleAddress = await oracle.getAddress();
   console.log("✅ SettlementOracle:", oracleAddress);
   await delay();
 
   // 4. Deploy FraudPrevention
   console.log("\n4️⃣  Deploying FraudPrevention...");
-  const fraudContract = new web3.eth.Contract(FraudPrevention.abi);
-  const fraud = await fraudContract.deploy({
-    data: FraudPrevention.bytecode,
-    arguments: [deployer.address]
-  }).send({ from: deployer.address, gas: 6000000 }); // Increased gas
-  const fraudAddress = fraud.options.address;
+  const fraudFactory = new ethers.ContractFactory(FraudPrevention.abi, FraudPrevention.bytecode, deployer);
+  const fraud = await fraudFactory.deploy(deployer.address, { ...gasConfig, gasLimit: 6000000 });
+  await fraud.waitForDeployment();
+  const fraudAddress = await fraud.getAddress();
   console.log("✅ FraudPrevention:", fraudAddress);
   await delay();
 
   // 5. Deploy PaymentSettlement
   console.log("\n5️⃣  Deploying PaymentSettlement...");
-  const settlementContract = new web3.eth.Contract(PaymentSettlement.abi);
-  const settlement = await settlementContract.deploy({
-    data: PaymentSettlement.bytecode,
-    arguments: [usdcAddress, poolAddress, deployer.address]
-  }).send({ from: deployer.address, gas: 5000000 });
-  const settlementAddress = settlement.options.address;
+  const settlementFactory = new ethers.ContractFactory(PaymentSettlement.abi, PaymentSettlement.bytecode, deployer);
+  const settlement = await settlementFactory.deploy(usdcAddress, poolAddress, deployer.address, { ...gasConfig, gasLimit: 5000000 });
+  await settlement.waitForDeployment();
+  const settlementAddress = await settlement.getAddress();
   console.log("✅ PaymentSettlement:", settlementAddress);
   await delay();
 
   // 6. Deploy TataPayGovernance
   console.log("\n6️⃣  Deploying TataPayGovernance...");
-  const govContract = new web3.eth.Contract(TataPayGovernance.abi);
-  const governance = await govContract.deploy({
-    data: TataPayGovernance.bytecode,
-    arguments: [[deployer.address], 1] // governors array, required approvals
-  }).send({ from: deployer.address, gas: 6000000 }); // Increased gas
-  const govAddress = governance.options.address;
+  const govFactory = new ethers.ContractFactory(TataPayGovernance.abi, TataPayGovernance.bytecode, deployer);
+  const governance = await govFactory.deploy([deployer.address], 1, { ...gasConfig, gasLimit: 6000000 });
+  await governance.waitForDeployment();
+  const govAddress = await governance.getAddress();
   console.log("✅ TataPayGovernance:", govAddress);
   await delay();
 
@@ -95,13 +85,16 @@ async function main() {
   console.log("\n7️⃣  Setting up roles...");
 
   // Grant SETTLEMENT_ROLE on CollateralPool
-  const SETTLEMENT_ROLE = await pool.methods.SETTLEMENT_ROLE().call();
-  await pool.methods.grantRole(SETTLEMENT_ROLE, settlementAddress).send({ from: deployer.address, gas: 200000 });
+  const SETTLEMENT_ROLE = await pool.SETTLEMENT_ROLE();
+  const tx1 = await pool.grantRole(SETTLEMENT_ROLE, settlementAddress, { ...gasConfig, gasLimit: 200000 });
+  await tx1.wait();
   console.log("✅ CollateralPool: SETTLEMENT_ROLE → PaymentSettlement");
+  await delay();
 
   // Grant FRAUD_MANAGER_ROLE on FraudPrevention
-  const FRAUD_MANAGER_ROLE = await fraud.methods.FRAUD_MANAGER_ROLE().call();
-  await fraud.methods.grantRole(FRAUD_MANAGER_ROLE, settlementAddress).send({ from: deployer.address, gas: 200000 });
+  const FRAUD_MANAGER_ROLE = await fraud.FRAUD_MANAGER_ROLE();
+  const tx2 = await fraud.grantRole(FRAUD_MANAGER_ROLE, settlementAddress, { ...gasConfig, gasLimit: 200000 });
+  await tx2.wait();
   console.log("✅ FraudPrevention: FRAUD_MANAGER_ROLE → PaymentSettlement");
 
   console.log("\n⚠️  Note: Oracles must register themselves via registerOracle() with stake");
@@ -114,7 +107,12 @@ async function main() {
   console.log(`FRAUD_PREVENTION_ADDRESS=${fraudAddress}`);
   console.log(`SETTLEMENT_ORACLE_ADDRESS=${oracleAddress}`);
   console.log(`TATAPAY_GOVERNANCE_ADDRESS=${govAddress}`);
-  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+  console.log("\n🔗 Block Explorer:");
+  console.log(`https://blockscout-passet-hub.parity-testnet.parity.io/address/${usdcAddress}`);
+
+  console.log("\n✅ All contracts deployed successfully!\n");
 
   process.exit(0);
 }

@@ -25,10 +25,11 @@ module.exports = {
       chainId: 31337,
     },
 
-    // Moonbase Alpha (Moonbeam Testnet) - Full EVM compatibility
-    moonbase: {
-      url: process.env.MOONBASE_RPC_URL || "https://moonbase.unitedbloc.com",
-      chainId: 1287,
+    // Paseo Asset Hub Testnet (Primary deployment target)
+    // IMPORTANT: Asset Hub requires 1000 gwei gas price!
+    paseoAssetHub: {
+      url: process.env.PASEO_RPC_URL || "https://testnet-passet-hub-eth-rpc.polkadot.io",
+      chainId: 420420422,
       accounts: [
         process.env.PRIVATE_KEY,
         process.env.ORACLE1_PRIVATE_KEY,
@@ -37,19 +38,27 @@ module.exports = {
         process.env.MERCHANT2_PRIVATE_KEY,
         process.env.MERCHANT3_PRIVATE_KEY,
       ].filter(key => key && key !== '0x0000000000000000000000000000000000000000000000000000000000000000'),
-      gasPrice: "auto",
+      gasPrice: 1000000000000, // 1000 gwei - Asset Hub requires high gas price!
       gas: "auto",
-      timeout: 60000,
+      timeout: 120000, // 2 minutes
     },
 
-    // Moonbeam Mainnet
-    moonbeam: {
-      url: process.env.MOONBEAM_RPC_URL || "https://rpc.api.moonbeam.network",
-      chainId: 1284,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      gasPrice: "auto",
+    // Westend Asset Hub Testnet (Backup)
+    // IMPORTANT: Asset Hub requires 1000 gwei gas price!
+    westendAssetHub: {
+      url: process.env.WESTEND_RPC_URL || "https://westend-asset-hub-eth-rpc.polkadot.io",
+      chainId: 420420421,
+      accounts: [
+        process.env.PRIVATE_KEY,
+        process.env.ORACLE1_PRIVATE_KEY,
+        process.env.ORACLE2_PRIVATE_KEY,
+        process.env.MERCHANT1_PRIVATE_KEY,
+        process.env.MERCHANT2_PRIVATE_KEY,
+        process.env.MERCHANT3_PRIVATE_KEY,
+      ].filter(key => key && key !== '0x0000000000000000000000000000000000000000000000000000000000000000'),
+      gasPrice: 1000000000000, // 1000 gwei - Asset Hub requires high gas price!
       gas: "auto",
-      timeout: 60000,
+      timeout: 120000, // 2 minutes
     },
   },
 
@@ -73,16 +82,15 @@ module.exports = {
 
   etherscan: {
     apiKey: {
-      moonbaseAlpha: process.env.MOONSCAN_API_KEY || "no-api-key-needed",
-      moonbeam: process.env.MOONSCAN_API_KEY || "no-api-key-needed",
+      paseoAssetHub: "no-api-key-needed", // Blockscout doesn't require API key
     },
     customChains: [
       {
-        network: "moonbaseAlpha",
-        chainId: 1287,
+        network: "paseoAssetHub",
+        chainId: 420420422,
         urls: {
-          apiURL: "https://api-moonbase.moonscan.io/api",
-          browserURL: "https://moonbase.moonscan.io",
+          apiURL: "https://blockscout-passet-hub.parity-testnet.parity.io/api",
+          browserURL: "https://blockscout-passet-hub.parity-testnet.parity.io",
         },
       },
     ],
