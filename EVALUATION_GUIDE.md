@@ -1,9 +1,8 @@
-# TataPay - W3F M1 Evaluation Guide
+# TataPay - Testing & Deployment Guide
 
 **Version**: 2.0
 **Date**: 2026-01-07
 **Network**: Paseo Asset Hub (Polkadot Testnet)
-**Purpose**: Complete testing guide for W3F Milestone 1 evaluation
 
 This guide provides two testing paths:
 1. **Option A**: Deploy fresh contracts and test (complete deployment walkthrough)
@@ -63,14 +62,14 @@ node scripts/deploy/deploy-all.js
 
 This deploys all 6 contracts and outputs their addresses. The addresses are automatically used from `config/networks.js`.
 
-### 4. Setup Deployment (Grant Roles + Mint USDC + Deposit Collateral)
+### 4. Setup Deployment (Configure Roles + Mint USDC + Deposit Collateral)
 
 ```bash
 node scripts/utils/setup-fresh-deployment.js
 ```
 
 This script:
-- Grants `ORACLE_ROLE` to Oracle1 on PaymentSettlement
+- Assigns `ORACLE_ROLE` to Oracle1 on PaymentSettlement
 - Mints 1,000,000 USDC to deployer
 - Deposits 100,000 USDC as collateral
 
@@ -112,7 +111,7 @@ Request PAS tokens from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=
 
 ### 3. Setup and Run E2E Test
 
-The setup script handles everything (minting USDC, depositing collateral, granting roles):
+The setup script handles everything (minting USDC, depositing collateral, configuring roles):
 
 ```bash
 node scripts/utils/setup-fresh-deployment.js
@@ -123,7 +122,7 @@ node scripts/e2e/complete-flow.js
 
 ---
 
-## E2E Acceptance Criteria
+## E2E Testing Criteria
 
 The `complete-flow.js` script demonstrates the complete TataPay payment settlement lifecycle:
 

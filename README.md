@@ -44,7 +44,7 @@ node scripts/e2e/complete-flow.js
 
 **Note:** Requires PAS tokens (for gas) from [Polkadot Faucet](https://faucet.polkadot.io/?parachain=1111) and test USDC (deployed via SimpleUSDC.sol). **IMPORTANT:** Asset Hub requires 1000 gwei gas price.
 
-**For detailed deployment and testing instructions**, see [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) - comprehensive guide covering fresh deployment, interaction with deployed contracts, and E2E acceptance criteria.
+**For detailed deployment and testing instructions**, see [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) - comprehensive guide covering fresh deployment, interaction with deployed contracts, and E2E testing.
 
 ## Architecture
 

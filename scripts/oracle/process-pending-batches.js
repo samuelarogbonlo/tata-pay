@@ -16,11 +16,11 @@ const networks = require("../../config/networks");
  *   node scripts/oracle/process-pending-batches.js [network]
  *
  * Example:
- *   node scripts/oracle/process-pending-batches.js moonbase
+ *   node scripts/oracle/process-pending-batches.js paseo
  */
 
 async function main() {
-  const networkName = process.argv[2] || "moonbase";
+  const networkName = process.argv[2] || "paseo";
   const network = networks.getNetwork(networkName);
   const web3 = new Web3(network.rpcUrl);
 

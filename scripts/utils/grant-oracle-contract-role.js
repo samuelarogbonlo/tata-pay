@@ -3,7 +3,7 @@ require("dotenv").config();
 const networks = require("../../config/networks");
 
 async function main() {
-  const network = networks.getNetwork("moonbase");
+  const network = networks.getNetwork("paseo");
   const web3 = new Web3(network.rpcUrl);
   const deployer = web3.eth.accounts.privateKeyToAccount(process.env.PRIVATE_KEY);
   web3.eth.accounts.wallet.add(deployer);

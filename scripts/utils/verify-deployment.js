@@ -134,7 +134,7 @@ async function main() {
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   if (allPassed) {
     console.log("✅ ALL CONTRACTS VERIFIED SUCCESSFULLY!");
-    console.log("\n🎉 Milestone 1 deployment complete and functional");
+    console.log("\n🎉 Deployment complete and functional");
   } else {
     console.log("❌ Some contracts failed verification");
     console.log("Review errors above and redeploy if needed");

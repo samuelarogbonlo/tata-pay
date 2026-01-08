@@ -17,7 +17,7 @@ const networks = require("../../config/networks");
  */
 
 async function main() {
-  const networkName = process.argv[2] || "moonbase";
+  const networkName = process.argv[2] || "paseo";
   const network = networks.getNetwork(networkName);
   const web3 = new Web3(network.rpcUrl);
 
