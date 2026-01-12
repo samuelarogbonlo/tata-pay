@@ -1,0 +1,14 @@
+{
+  "network": "paseo",
+  "deployedAt": "2026-01-12T14:27:04.918Z",
+  "addresses": {
+    "usdc": "0xeE25c23a06265fb5f82538EC93F6C6Aaf105A959",
+    "transactionRegistry": "0xE9af506bFED5Bb5Eb269734e45440D23C5880ED4",
+    "crossBorderSettlement": "0xb1620a9f5FC8DffA3b7807267c4A9214bEA4C542",
+    "fraudPrevention": "0x5B634e431F4db6F7080EeA5bBe7b142d666140EF",
+    "settlementOracle": "0x793D048B0Ce537739204768CCA37c339D988A5C8",
+    "governance": "0xb156e542c1AF0f9fF817993e5833Cf5217C84395",
+    "yaraSettlement": "0x270a96208850d6Ce32c4fDFe9CB161Dba36f02f9"
+  },
+  "blockExplorer": "https://blockscout-passet-hub.parity-testnet.parity.io"
+}

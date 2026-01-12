@@ -18,94 +18,158 @@ async function main() {
   const gasPrice = ethers.parseUnits('1000', 'gwei');
   const gasConfig = { gasPrice };
 
-  // Contract addresses
+  // Contract addresses (these will be updated after deployment)
   const addresses = {
-    usdc: "0xd1bBE61C683B339dE9733b928616C1594e770A3c",
-    collateralPool: "0x1FCd386a00777A469e7C6993FB7E0f9515DB1bFc",
-    paymentSettlement: "0x4B4280B2277e6F15CF4d7fC6Bd6BFAd1144AE9DF",
+    usdc: "0xeE25c23a06265fb5f82538EC93F6C6Aaf105A959", // Update after deployment
+    transactionRegistry: "0xE9af506bFED5Bb5Eb269734e45440D23C5880ED4", // Update after deployment
+    crossBorderSettlement: "0xb1620a9f5FC8DffA3b7807267c4A9214bEA4C542", // Update after deployment
+    settlementOracle: "0x793D048B0Ce537739204768CCA37c339D988A5C8", // Update after deployment
   };
 
   console.log("\n📋 Contracts:");
-  console.log("  USDC:             ", addresses.usdc);
-  console.log("  CollateralPool:   ", addresses.collateralPool);
-  console.log("  PaymentSettlement:", addresses.paymentSettlement);
+  console.log("  USDC:                   ", addresses.usdc);
+  console.log("  TransactionRegistry:    ", addresses.transactionRegistry);
+  console.log("  CrossBorderSettlement:  ", addresses.crossBorderSettlement);
+  console.log("  SettlementOracle:       ", addresses.settlementOracle);
 
   // Load contracts
   const SimpleUSDC = require("../../artifacts/contracts/mocks/SimpleUSDC.sol/SimpleUSDC.json");
-  const CollateralPool = require("../../artifacts/contracts/core/CollateralPool.sol/CollateralPool.json");
-  const PaymentSettlement = require("../../artifacts/contracts/core/PaymentSettlement.sol/PaymentSettlement.json");
+  const TransactionRegistry = require("../../artifacts/contracts/core/TransactionRegistry.sol/TransactionRegistry.json");
+  const CrossBorderSettlement = require("../../artifacts/contracts/core/CrossBorderSettlement.sol/CrossBorderSettlement.json");
+  const SettlementOracle = require("../../artifacts/contracts/core/SettlementOracle.sol/SettlementOracle.json");
 
   const usdc = new ethers.Contract(addresses.usdc, SimpleUSDC.abi, fintech);
-  const pool = new ethers.Contract(addresses.collateralPool, CollateralPool.abi, fintech);
-  const settlement = new ethers.Contract(addresses.paymentSettlement, PaymentSettlement.abi, fintech);
+  const registry = new ethers.Contract(addresses.transactionRegistry, TransactionRegistry.abi, fintech);
+  const settlement = new ethers.Contract(addresses.crossBorderSettlement, CrossBorderSettlement.abi, fintech);
+  const oracle = new ethers.Contract(addresses.settlementOracle, SettlementOracle.abi, oracle1);
 
-  // 1. Check collateral
-  console.log("\n1️⃣  Checking collateral...");
-  const balances = await pool.balances(fintech.address);
-  console.log(`   Available: ${ethers.formatUnits(balances.availableBalance, 6)} USDC`);
-  console.log(`   Locked: ${ethers.formatUnits(balances.lockedBalance, 6)} USDC`);
+  // ============== PART 1: DOMESTIC TRANSACTION FLOW ==============
+  console.log("\n═══════════════════════════════════════");
+  console.log("   DOMESTIC TRANSACTION FLOW");
+  console.log("═══════════════════════════════════════");
 
-  // 2. Create batch
-  console.log("\n2️⃣  Creating payment batch...");
-  const batchData = {
-    merchants: [merchant1.address],
-    amounts: [ethers.parseUnits("2000", 6)],
-  };
+  // 1. Record domestic transaction
+  console.log("\n1️⃣  Recording domestic transaction in TransactionRegistry...");
 
-  const tx1 = await settlement.createBatch(batchData.merchants, batchData.amounts, { ...gasConfig, gasLimit: 500000 });
+  const txId = ethers.keccak256(ethers.toUtf8Bytes(`tx-${Date.now()}`));
+  const domesticAmount = ethers.parseUnits("50000", 0); // 50,000 NGN in kobo (minor units)
+  const currency = "NGN";
+  const externalRef = "PAYSTACK-12345";
+
+  const tx1 = await registry.recordTransaction(
+    txId,
+    merchant1.address,
+    domesticAmount,
+    currency,
+    externalRef,
+    { ...gasConfig, gasLimit: 300000 }
+  );
   const receipt1 = await tx1.wait();
-
-  // Extract batchId from event
-  const batchCreatedEvent = receipt1.logs.find(log => {
-    try {
-      return settlement.interface.parseLog(log)?.name === "BatchCreated";
-    } catch { return false; }
-  });
-  const batchId = settlement.interface.parseLog(batchCreatedEvent).args.batchId;
-
-  console.log("   ✅ Batch created:", batchId);
+  console.log("   ✅ Transaction recorded!");
+  console.log("   Transaction ID:", txId);
+  console.log("   Merchant:", merchant1.address);
+  console.log("   Amount:", ethers.formatUnits(domesticAmount, 2), currency);
   console.log("   Tx:", receipt1.hash);
 
-  // 3. Oracle approves
-  console.log("\n3️⃣  Oracle1 approving batch...");
-  const settlementAsOracle = new ethers.Contract(addresses.paymentSettlement, PaymentSettlement.abi, oracle1);
-  const hasRole = await settlementAsOracle.hasRole(await settlementAsOracle.ORACLE_ROLE(), oracle1.address);
-  console.log("   Oracle1 has ORACLE_ROLE:", hasRole);
+  // 2. Query transaction proof
+  console.log("\n2️⃣  Querying transaction proof...");
+  const txData = await registry.transactions(txId);
+  console.log("   Block Number:", txData.blockNumber.toString());
+  console.log("   Timestamp:", new Date(Number(txData.createdAt) * 1000).toISOString());
+  console.log("   Status:", ["Pending", "Confirmed", "Disputed", "Resolved"][txData.status]);
 
-  const tx2 = await settlementAsOracle.approveBatch(batchId, { ...gasConfig, gasLimit: 300000 });
+  // ============== PART 2: CROSS-BORDER SETTLEMENT FLOW ==============
+  console.log("\n═══════════════════════════════════════");
+  console.log("   CROSS-BORDER SETTLEMENT FLOW");
+  console.log("═══════════════════════════════════════");
+
+  // 3. Check USDC balance
+  console.log("\n3️⃣  Checking USDC balances...");
+  const fintechBalance = await usdc.balanceOf(fintech.address);
+  const settlementBalance = await usdc.balanceOf(addresses.crossBorderSettlement);
+  console.log("   Fintech USDC:", ethers.formatUnits(fintechBalance, 6));
+  console.log("   Settlement Contract USDC:", ethers.formatUnits(settlementBalance, 6));
+
+  // 4. Approve USDC for cross-border payment
+  console.log("\n4️⃣  Approving USDC for cross-border payment...");
+  const crossBorderAmount = ethers.parseUnits("100", 6); // 100 USDC
+  const approveTx = await usdc.approve(addresses.crossBorderSettlement, crossBorderAmount, { ...gasConfig, gasLimit: 100000 });
+  await approveTx.wait();
+  console.log("   ✅ Approved", ethers.formatUnits(crossBorderAmount, 6), "USDC");
+
+  // 5. Initiate cross-border payment
+  console.log("\n5️⃣  Initiating cross-border payment...");
+  const paymentId = ethers.keccak256(ethers.toUtf8Bytes(`payment-${Date.now()}`));
+  const targetCurrency = "GHS"; // Ghana Cedis
+  const targetBankHash = ethers.keccak256(ethers.toUtf8Bytes("Bank: Stanbic, Account: 1234567890"));
+
+  const tx2 = await settlement.initiatePayment(
+    paymentId,
+    merchant1.address, // recipient
+    crossBorderAmount,
+    targetCurrency,
+    targetBankHash,
+    { ...gasConfig, gasLimit: 400000 }
+  );
   const receipt2 = await tx2.wait();
-  console.log("   ✅ Batch approved!");
+  console.log("   ✅ Payment initiated!");
+  console.log("   Payment ID:", paymentId);
+  console.log("   Amount:", ethers.formatUnits(crossBorderAmount, 6), "USDC →", targetCurrency);
   console.log("   Tx:", receipt2.hash);
 
-  // 4. Merchant claims
-  console.log("\n4️⃣  Merchant claiming payment...");
-  const settlementAsMerchant = new ethers.Contract(addresses.paymentSettlement, PaymentSettlement.abi, merchant1);
-  const usdcAsMerchant = new ethers.Contract(addresses.usdc, SimpleUSDC.abi, merchant1);
+  // 6. Check escrow status
+  console.log("\n6️⃣  Checking escrow status...");
+  const payment = await settlement.payments(paymentId);
+  const statusNames = ["Pending", "Locked", "Confirmed", "Failed", "Refunded", "TimedOut"];
+  console.log("   Status:", statusNames[payment.status]);
+  console.log("   USDC in escrow:", ethers.formatUnits(payment.usdcAmount, 6));
+  console.log("   Expires at:", new Date(Number(payment.expiresAt) * 1000).toISOString());
 
-  const balanceBefore = await usdcAsMerchant.balanceOf(merchant1.address);
-  console.log("   Merchant balance before:", ethers.formatUnits(balanceBefore, 6), "USDC");
+  // 7. Oracle confirms payment (simulating Yara API confirmation)
+  console.log("\n7️⃣  Oracle confirming payment (simulating Yara payout)...");
 
-  const tx3 = await settlementAsMerchant.claimPayment(batchId, { ...gasConfig, gasLimit: 300000 });
-  const receipt3 = await tx3.wait();
-  console.log("   ✅ Payment claimed!");
-  console.log("   Tx:", receipt3.hash);
+  // First register oracle if not already registered (fintech/admin calls this)
+  try {
+    const oracleAsAdmin = new ethers.Contract(addresses.settlementOracle, SettlementOracle.abi, fintech);
+    const oracleInfo = await oracleAsAdmin.oracles(oracle1.address);
+    if (!oracleInfo.isRegistered) {
+      console.log("   Registering oracle first...");
+      // Stake is in native tokens (PAS), sent as msg.value
+      const stakeAmount = await oracleAsAdmin.minimumStake();
+      console.log("   Minimum stake:", ethers.formatEther(stakeAmount), "PAS");
 
-  const balanceAfter = await usdcAsMerchant.balanceOf(merchant1.address);
-  console.log("   Merchant balance after:", ethers.formatUnits(balanceAfter, 6), "USDC");
-  console.log("   Received:", ethers.formatUnits(balanceAfter - balanceBefore, 6), "USDC ✅");
+      // Admin (fintech) has ORACLE_MANAGER_ROLE and registers the oracle
+      await (await oracleAsAdmin.registerOracle(oracle1.address, {
+        ...gasConfig,
+        gasLimit: 500000,
+        value: stakeAmount
+      })).wait();
+      console.log("   ✅ Oracle registered with", ethers.formatEther(stakeAmount), "PAS stake");
+    } else {
+      console.log("   Oracle already registered");
+    }
+  } catch (e) {
+    console.log("   ⚠️  Oracle registration failed:", e.message?.slice(0, 100));
+  }
 
-  // 5. Final status
-  console.log("\n5️⃣  Final status...");
-  const batch = await settlement.batches(batchId);
-  const statusNames = ["Pending", "Processing", "Settled", "Failed", "Cancelled", "TimedOut"];
-  const statusNum = Number(batch.status);
-  console.log("   Batch status:", statusNames[statusNum] || statusNum);
-  console.log("   Claimed count:", batch.claimedCount?.toString() || "N/A");
-  console.log("   Total amount:", ethers.formatUnits(batch.totalAmount || 0n, 6), "USDC");
+  const yaraReference = "YARA-PAY-67890";
+  const confirmTx = await oracle.confirmPayment(paymentId, yaraReference, { ...gasConfig, gasLimit: 300000 });
+  const confirmReceipt = await confirmTx.wait();
+  console.log("   ✅ Payment confirmed!");
+  console.log("   Yara Reference:", yaraReference);
+  console.log("   Tx:", confirmReceipt.hash);
 
-  const finalBalances = await pool.balances(fintech.address);
-  console.log("   Pool available:", ethers.formatUnits(finalBalances.availableBalance, 6), "USDC");
-  console.log("   Pool locked:", ethers.formatUnits(finalBalances.lockedBalance, 6), "USDC");
+  // 8. Check final status
+  console.log("\n8️⃣  Checking final settlement status...");
+  const finalPayment = await settlement.payments(paymentId);
+  console.log("   Status:", statusNames[finalPayment.status]);
+  console.log("   Yara Reference:", finalPayment.yaraReference || "N/A");
+
+  const yaraBalance = await usdc.balanceOf(await settlement.yaraSettlementAddress());
+  console.log("   Yara Settlement Address Balance:", ethers.formatUnits(yaraBalance, 6), "USDC");
+
+  const totalSettled = await settlement.totalSettled();
+  console.log("   Total USDC Settled:", ethers.formatUnits(totalSettled, 6));
 
   console.log("\n═══════════════════════════════════════");
   console.log("   E2E TEST COMPLETE ✅");

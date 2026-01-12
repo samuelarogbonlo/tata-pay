@@ -4,21 +4,21 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./PaymentSettlement.sol";
+import "./CrossBorderSettlement.sol";
 
 /**
  * @title SettlementOracle
- * @notice Oracle contract for verifying off-chain payment data
+ * @notice Oracle contract for confirming cross-border payment settlements
+ * @dev Updated to work with CrossBorderSettlement instead of PaymentSettlement
  *
  * Features:
  * - Oracle registration and management
- * - Batch approval/rejection via registered oracle accounts
+ * - Payment confirmation/failure via registered oracle accounts
  * - Oracle staking and slashing
  * - Multi-oracle support with threshold consensus
  *
  * Security:
  * - Role-based access control
- * - Signature verification (ECDSA)
  * - Replay attack prevention
  * - Pause mechanism
  * - Reentrancy protection
@@ -35,24 +35,24 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         bool isRegistered;
         bool isActive;
         uint256 stake;
-        uint256 approvals;
-        uint256 rejections;
+        uint256 confirmations;
+        uint256 failures;
         uint256 slashes;
         uint256 registeredAt;
         uint256 lastActivityAt;
     }
 
-    struct ApprovalRequest {
-        bytes32 batchId;
+    struct PaymentVote {
+        bytes32 paymentId;
         address oracle;
-        bool approved;
-        string reason;
+        bool isConfirmation;
+        string data; // yaraReference for confirmations, reason for failures
         uint256 timestamp;
     }
 
     // ============ State Variables ============
 
-    PaymentSettlement public immutable paymentSettlement;
+    CrossBorderSettlement public immutable crossBorderSettlement;
 
     // Oracle management
     mapping(address => OracleInfo) public oracles;
@@ -63,19 +63,19 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
     uint256 public minimumStake;
     uint256 public slashAmount;
 
-    // Request tracking
-    mapping(bytes32 => ApprovalRequest) public approvalRequests;
-    mapping(bytes32 => bool) public processedBatches;
+    // Vote tracking
+    mapping(bytes32 => PaymentVote[]) public paymentVoteHistory;
+    mapping(bytes32 => bool) public processedPayments;
 
     // Multi-oracle consensus
-    mapping(bytes32 => mapping(address => bool)) public batchVotes;
-    mapping(bytes32 => uint256) public batchApprovalCount;
-    mapping(bytes32 => uint256) public batchRejectionCount;
-    uint256 public approvalThreshold; // Number of oracle approvals needed
+    mapping(bytes32 => mapping(address => bool)) public hasVoted;
+    mapping(bytes32 => uint256) public confirmationCount;
+    mapping(bytes32 => uint256) public failureCount;
+    uint256 public approvalThreshold; // Number of oracle confirmations needed
 
     // Metrics
-    uint256 public totalApprovalsProcessed;
-    uint256 public totalRejectionsProcessed;
+    uint256 public totalConfirmationsProcessed;
+    uint256 public totalFailuresProcessed;
     uint256 public totalOraclesSlashed;
 
     // ============ Events ============
@@ -108,15 +108,28 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         uint256 timestamp
     );
 
-    event BatchApproved(
-        bytes32 indexed batchId,
+    event PaymentConfirmationVoted(
+        bytes32 indexed paymentId,
         address indexed oracle,
+        string yaraReference,
         uint256 timestamp
     );
 
-    event BatchRejected(
-        bytes32 indexed batchId,
+    event PaymentFailureVoted(
+        bytes32 indexed paymentId,
         address indexed oracle,
+        string reason,
+        uint256 timestamp
+    );
+
+    event PaymentConfirmed(
+        bytes32 indexed paymentId,
+        string yaraReference,
+        uint256 timestamp
+    );
+
+    event PaymentFailed(
+        bytes32 indexed paymentId,
         string reason,
         uint256 timestamp
     );
@@ -137,156 +150,175 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
 
     /**
      * @notice Initialize SettlementOracle
-     * @param _paymentSettlement PaymentSettlement contract address
+     * @param _crossBorderSettlement CrossBorderSettlement contract address
      * @param _admin Admin address
      * @param _minimumStake Minimum stake required for oracles
      */
     constructor(
-        address _paymentSettlement,
+        address _crossBorderSettlement,
         address _admin,
         uint256 _minimumStake
     ) {
-        require(_paymentSettlement != address(0), "SettlementOracle: Invalid settlement address");
+        require(_crossBorderSettlement != address(0), "SettlementOracle: Invalid settlement address");
         require(_admin != address(0), "SettlementOracle: Invalid admin");
 
-        paymentSettlement = PaymentSettlement(_paymentSettlement);
+        crossBorderSettlement = CrossBorderSettlement(_crossBorderSettlement);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(ORACLE_MANAGER_ROLE, _admin);
         _grantRole(EMERGENCY_ROLE, _admin);
 
         minimumStake = _minimumStake;
-        slashAmount = _minimumStake / 10; // 10% slash by default
-        approvalThreshold = 1; // Single oracle by default
+        slashAmount = _minimumStake / 10;
+        approvalThreshold = 1; // Start with single oracle
     }
 
-    // ============ External Functions ============
+    // ============ Oracle Registration ============
 
     /**
-     * @notice Register as oracle with stake
+     * @notice Register new oracle
+     * @param oracle Oracle address
      */
-    function registerOracle() external payable nonReentrant whenNotPaused {
-        require(!oracles[msg.sender].isRegistered, "SettlementOracle: Already registered");
+    function registerOracle(
+        address oracle
+    ) external payable onlyRole(ORACLE_MANAGER_ROLE) {
+        require(oracle != address(0), "SettlementOracle: Invalid address");
+        require(!oracles[oracle].isRegistered, "SettlementOracle: Already registered");
         require(msg.value >= minimumStake, "SettlementOracle: Insufficient stake");
 
-        oracles[msg.sender] = OracleInfo({
+        oracles[oracle] = OracleInfo({
             isRegistered: true,
             isActive: true,
             stake: msg.value,
-            approvals: 0,
-            rejections: 0,
+            confirmations: 0,
+            failures: 0,
             slashes: 0,
             registeredAt: block.timestamp,
             lastActivityAt: block.timestamp
         });
 
-        oracleList.push(msg.sender);
+        oracleList.push(oracle);
         activeOracleCount++;
 
-        emit OracleRegistered(msg.sender, msg.value, block.timestamp);
+        // Grant oracle role in CrossBorderSettlement
+        crossBorderSettlement.grantOracleRole(oracle);
+
+        emit OracleRegistered(oracle, msg.value, block.timestamp);
     }
 
     /**
-     * @notice Deregister oracle and withdraw stake
+     * @notice Deregister oracle and return stake
+     * @param oracle Oracle address
      */
-    function deregisterOracle() external nonReentrant {
-        OracleInfo storage info = oracles[msg.sender];
+    function deregisterOracle(
+        address oracle
+    ) external onlyRole(ORACLE_MANAGER_ROLE) {
+        OracleInfo storage info = oracles[oracle];
         require(info.isRegistered, "SettlementOracle: Not registered");
 
-        uint256 stakeToReturn = info.stake;
+        uint256 returnAmount = info.stake;
 
-        // Remove from active count if active
         if (info.isActive) {
             activeOracleCount--;
         }
 
-        // Mark as deregistered
         info.isRegistered = false;
         info.isActive = false;
         info.stake = 0;
 
-        // Return stake
-        (bool success, ) = msg.sender.call{value: stakeToReturn}("");
-        require(success, "SettlementOracle: Stake transfer failed");
+        // Revoke oracle role in CrossBorderSettlement
+        crossBorderSettlement.revokeOracleRole(oracle);
 
-        emit OracleDeregistered(msg.sender, block.timestamp);
+        // Return stake
+        if (returnAmount > 0) {
+            (bool success, ) = oracle.call{value: returnAmount}("");
+            require(success, "SettlementOracle: Stake return failed");
+        }
+
+        emit OracleDeregistered(oracle, block.timestamp);
     }
 
+    // ============ Payment Voting ============
+
     /**
-     * @notice Approve batch with signed message
-     * @param batchId Batch ID to approve
+     * @notice Vote to confirm a cross-border payment
+     * @param paymentId Payment ID to confirm
+     * @param yaraReference Yara payout reference
      */
-    function approveBatch(
-        bytes32 batchId
+    function confirmPayment(
+        bytes32 paymentId,
+        string calldata yaraReference
     ) external nonReentrant whenNotPaused {
         OracleInfo storage info = oracles[msg.sender];
         require(info.isRegistered && info.isActive, "SettlementOracle: Not active oracle");
-        require(!processedBatches[batchId], "SettlementOracle: Batch already processed");
-        require(!batchVotes[batchId][msg.sender], "SettlementOracle: Already voted");
+        require(!processedPayments[paymentId], "SettlementOracle: Payment already processed");
+        require(!hasVoted[paymentId][msg.sender], "SettlementOracle: Already voted");
 
         // Record vote
-        batchVotes[batchId][msg.sender] = true;
-        batchApprovalCount[batchId]++;
+        hasVoted[paymentId][msg.sender] = true;
+        confirmationCount[paymentId]++;
 
         // Update oracle stats
-        info.approvals++;
+        info.confirmations++;
         info.lastActivityAt = block.timestamp;
 
-        // Store approval request
-        approvalRequests[batchId] = ApprovalRequest({
-            batchId: batchId,
+        // Store vote history
+        paymentVoteHistory[paymentId].push(PaymentVote({
+            paymentId: paymentId,
             oracle: msg.sender,
-            approved: true,
-            reason: "",
+            isConfirmation: true,
+            data: yaraReference,
             timestamp: block.timestamp
-        });
+        }));
 
-        emit BatchApproved(batchId, msg.sender, block.timestamp);
+        emit PaymentConfirmationVoted(paymentId, msg.sender, yaraReference, block.timestamp);
 
         // Check if threshold reached
-        if (batchApprovalCount[batchId] >= approvalThreshold) {
-            _executeBatchApproval(batchId);
+        if (confirmationCount[paymentId] >= approvalThreshold) {
+            _executePaymentConfirmation(paymentId, yaraReference);
         }
     }
 
     /**
-     * @notice Reject batch with signed message and reason
-     * @param batchId Batch ID to reject
-     * @param reason Rejection reason
+     * @notice Vote to fail a cross-border payment
+     * @param paymentId Payment ID to fail
+     * @param reason Failure reason
      */
-    function rejectBatch(
-        bytes32 batchId,
+    function failPayment(
+        bytes32 paymentId,
         string calldata reason
     ) external nonReentrant whenNotPaused {
         OracleInfo storage info = oracles[msg.sender];
         require(info.isRegistered && info.isActive, "SettlementOracle: Not active oracle");
-        require(!processedBatches[batchId], "SettlementOracle: Batch already processed");
-        require(!batchVotes[batchId][msg.sender], "SettlementOracle: Already voted");
+        require(!processedPayments[paymentId], "SettlementOracle: Payment already processed");
+        require(!hasVoted[paymentId][msg.sender], "SettlementOracle: Already voted");
 
         // Record vote
-        batchVotes[batchId][msg.sender] = true;
-        batchRejectionCount[batchId]++;
+        hasVoted[paymentId][msg.sender] = true;
+        failureCount[paymentId]++;
 
         // Update oracle stats
-        info.rejections++;
+        info.failures++;
         info.lastActivityAt = block.timestamp;
 
-        // Store approval request
-        approvalRequests[batchId] = ApprovalRequest({
-            batchId: batchId,
+        // Store vote history
+        paymentVoteHistory[paymentId].push(PaymentVote({
+            paymentId: paymentId,
             oracle: msg.sender,
-            approved: false,
-            reason: reason,
+            isConfirmation: false,
+            data: reason,
             timestamp: block.timestamp
-        });
+        }));
 
-        emit BatchRejected(batchId, msg.sender, reason, block.timestamp);
+        emit PaymentFailureVoted(paymentId, msg.sender, reason, block.timestamp);
 
-        // Check if threshold reached
-        if (batchRejectionCount[batchId] >= approvalThreshold) {
-            _executeBatchRejection(batchId, reason);
+        // Check if threshold reached (using same threshold as confirmations)
+        if (failureCount[paymentId] >= approvalThreshold) {
+            _executePaymentFailure(paymentId, reason);
         }
     }
+
+    // ============ Oracle Management ============
 
     /**
      * @notice Slash oracle for malicious behavior
@@ -309,6 +341,7 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         if (info.stake < minimumStake) {
             info.isActive = false;
             activeOracleCount--;
+            crossBorderSettlement.revokeOracleRole(oracle);
             emit OracleDeactivated(oracle, block.timestamp);
         }
 
@@ -332,6 +365,9 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         info.isActive = true;
         activeOracleCount++;
 
+        // Re-grant oracle role
+        crossBorderSettlement.grantOracleRole(oracle);
+
         emit OracleActivated(oracle, block.timestamp);
     }
 
@@ -349,8 +385,13 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
         info.isActive = false;
         activeOracleCount--;
 
+        // Revoke oracle role
+        crossBorderSettlement.revokeOracleRole(oracle);
+
         emit OracleDeactivated(oracle, block.timestamp);
     }
+
+    // ============ Admin Functions ============
 
     /**
      * @notice Update approval threshold
@@ -424,42 +465,53 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Get batch vote status
-     * @param batchId Batch ID
-     * @return approvals Approval count
-     * @return rejections Rejection count
-     * @return processed Whether batch processed
+     * @notice Get payment vote status
+     * @param paymentId Payment ID
+     * @return confirmations Confirmation count
+     * @return failures Failure count
+     * @return processed Whether payment processed
      */
-    function getBatchVoteStatus(
-        bytes32 batchId
+    function getPaymentVoteStatus(
+        bytes32 paymentId
     ) external view returns (
-        uint256 approvals,
-        uint256 rejections,
+        uint256 confirmations,
+        uint256 failures,
         bool processed
     ) {
         return (
-            batchApprovalCount[batchId],
-            batchRejectionCount[batchId],
-            processedBatches[batchId]
+            confirmationCount[paymentId],
+            failureCount[paymentId],
+            processedPayments[paymentId]
         );
     }
 
     /**
+     * @notice Get vote history for a payment
+     * @param paymentId Payment ID
+     * @return votes Array of payment votes
+     */
+    function getPaymentVoteHistory(
+        bytes32 paymentId
+    ) external view returns (PaymentVote[] memory votes) {
+        return paymentVoteHistory[paymentId];
+    }
+
+    /**
      * @notice Get metrics
-     * @return _totalApprovals Total approvals
-     * @return _totalRejections Total rejections
+     * @return _totalConfirmations Total confirmations
+     * @return _totalFailures Total failures
      * @return _totalSlashed Total oracles slashed
      * @return _activeOracles Active oracle count
      */
     function getMetrics() external view returns (
-        uint256 _totalApprovals,
-        uint256 _totalRejections,
+        uint256 _totalConfirmations,
+        uint256 _totalFailures,
         uint256 _totalSlashed,
         uint256 _activeOracles
     ) {
         return (
-            totalApprovalsProcessed,
-            totalRejectionsProcessed,
+            totalConfirmationsProcessed,
+            totalFailuresProcessed,
             totalOraclesSlashed,
             activeOracleCount
         );
@@ -468,29 +520,37 @@ contract SettlementOracle is AccessControl, Pausable, ReentrancyGuard {
     // ============ Internal Functions ============
 
     /**
-     * @notice Execute batch approval on PaymentSettlement
-     * @param batchId Batch ID
+     * @notice Execute payment confirmation on CrossBorderSettlement
+     * @param paymentId Payment ID
+     * @param yaraReference Yara reference
      */
-    function _executeBatchApproval(bytes32 batchId) internal {
-        require(!processedBatches[batchId], "SettlementOracle: Already processed");
+    function _executePaymentConfirmation(bytes32 paymentId, string memory yaraReference) internal {
+        require(!processedPayments[paymentId], "SettlementOracle: Already processed");
 
-        processedBatches[batchId] = true;
-        totalApprovalsProcessed++;
+        processedPayments[paymentId] = true;
+        totalConfirmationsProcessed++;
 
-        paymentSettlement.approveBatch(batchId);
+        // Call CrossBorderSettlement to confirm payment
+        // The oracle calling this must have ORACLE_ROLE in CrossBorderSettlement
+        crossBorderSettlement.confirmPayment(paymentId, yaraReference);
+
+        emit PaymentConfirmed(paymentId, yaraReference, block.timestamp);
     }
 
     /**
-     * @notice Execute batch rejection on PaymentSettlement
-     * @param batchId Batch ID
-     * @param reason Rejection reason
+     * @notice Execute payment failure on CrossBorderSettlement
+     * @param paymentId Payment ID
+     * @param reason Failure reason
      */
-    function _executeBatchRejection(bytes32 batchId, string memory reason) internal {
-        require(!processedBatches[batchId], "SettlementOracle: Already processed");
+    function _executePaymentFailure(bytes32 paymentId, string memory reason) internal {
+        require(!processedPayments[paymentId], "SettlementOracle: Already processed");
 
-        processedBatches[batchId] = true;
-        totalRejectionsProcessed++;
+        processedPayments[paymentId] = true;
+        totalFailuresProcessed++;
 
-        paymentSettlement.failBatch(batchId, reason);
+        // Call CrossBorderSettlement to fail payment
+        crossBorderSettlement.failPayment(paymentId, reason);
+
+        emit PaymentFailed(paymentId, reason, block.timestamp);
     }
 }

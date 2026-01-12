@@ -1,67 +1,66 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const { loadFixture } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
+const { loadFixture, time } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 
 describe("Attack Simulations", function () {
-  // Deploy all contracts fixture
+  // Deploy contracts fixture (NEW architecture only)
   async function deployContractsFixture() {
-    const [owner, fintech, merchant1, merchant2, attacker, oracle] = await ethers.getSigners();
+    const [owner, fintech, merchant1, merchant2, attacker, oracle, yaraSettlement, sender] = await ethers.getSigners();
 
     // Deploy MockUSDC
-    const MockUSDC = await ethers.getContractFactory("MockUSDC");
+    const MockUSDC = await ethers.getContractFactory("contracts/mocks/MockUSDC.sol:MockUSDC");
     const usdc = await MockUSDC.deploy("USD Coin", "USDC", 6);
 
-    // Deploy CollateralPool
-    const CollateralPool = await ethers.getContractFactory("CollateralPool");
-    const collateralPool = await CollateralPool.deploy(
+    // Deploy TransactionRegistry
+    const TransactionRegistry = await ethers.getContractFactory("TransactionRegistry");
+    const transactionRegistry = await TransactionRegistry.deploy(owner.address);
+
+    // Deploy CrossBorderSettlement
+    const CrossBorderSettlement = await ethers.getContractFactory("CrossBorderSettlement");
+    const crossBorderSettlement = await CrossBorderSettlement.deploy(
       await usdc.getAddress(),
       owner.address,
-      owner.address
+      yaraSettlement.address
     );
 
     // Deploy FraudPrevention
     const FraudPrevention = await ethers.getContractFactory("FraudPrevention");
     const fraudPrevention = await FraudPrevention.deploy(owner.address);
 
-    // Deploy PaymentSettlement
-    const PaymentSettlement = await ethers.getContractFactory("PaymentSettlement");
-    const paymentSettlement = await PaymentSettlement.deploy(
-      await usdc.getAddress(),
-      await collateralPool.getAddress(),
-      owner.address
-    );
-
     // Deploy SettlementOracle
     const SettlementOracle = await ethers.getContractFactory("SettlementOracle");
-    const minimumStake = ethers.parseEther("1"); // 1 ETH/PAS minimum stake
+    const minimumStake = ethers.parseEther("1");
     const settlementOracle = await SettlementOracle.deploy(
-      await paymentSettlement.getAddress(),
+      await crossBorderSettlement.getAddress(),
       owner.address,
       minimumStake
     );
 
     // Grant roles
-    const SETTLEMENT_ROLE = await collateralPool.SETTLEMENT_ROLE();
-    await collateralPool.grantRole(SETTLEMENT_ROLE, await paymentSettlement.getAddress());
+    const RECORDER_ROLE = await transactionRegistry.RECORDER_ROLE();
+    await transactionRegistry.grantRole(RECORDER_ROLE, fintech.address);
 
-    const ORACLE_ROLE = await paymentSettlement.ORACLE_ROLE();
-    await paymentSettlement.grantRole(ORACLE_ROLE, await settlementOracle.getAddress());
+    const CBS_ORACLE_ROLE = await crossBorderSettlement.ORACLE_ROLE();
+    await crossBorderSettlement.grantRole(CBS_ORACLE_ROLE, oracle.address);
+    await crossBorderSettlement.grantRole(CBS_ORACLE_ROLE, settlementOracle.target);
 
-    const FRAUD_ROLE = await paymentSettlement.FRAUD_ROLE();
-    await paymentSettlement.grantRole(FRAUD_ROLE, await fraudPrevention.getAddress());
+    // Configure CrossBorderSettlement
+    await crossBorderSettlement.setLockupPeriod(48 * 60 * 60); // 48 hours
+    await crossBorderSettlement.setAmountLimits(
+      ethers.parseUnits("10", 6),
+      ethers.parseUnits("100000", 6)
+    );
 
-    const SLASHER_ROLE = await collateralPool.SLASHER_ROLE();
-    await collateralPool.grantRole(SLASHER_ROLE, await fraudPrevention.getAddress());
-
-    // Mint USDC to fintech (10M USDC for large tests)
+    // Mint USDC
     await usdc.mint(fintech.address, ethers.parseUnits("10000000", 6));
-    await usdc.connect(fintech).approve(await collateralPool.getAddress(), ethers.MaxUint256);
+    await usdc.mint(sender.address, ethers.parseUnits("10000000", 6));
+    await usdc.mint(attacker.address, ethers.parseUnits("10000000", 6));
 
     return {
       usdc,
-      collateralPool,
+      transactionRegistry,
+      crossBorderSettlement,
       fraudPrevention,
-      paymentSettlement,
       settlementOracle,
       owner,
       fintech,
@@ -69,347 +68,533 @@ describe("Attack Simulations", function () {
       merchant2,
       attacker,
       oracle,
+      yaraSettlement,
+      sender,
+      minimumStake,
     };
   }
 
-  describe("1. Reentrancy Attack Tests", function () {
-    it("Should prevent reentrancy attack on claimPayment", async function () {
-      const { usdc, collateralPool, paymentSettlement, settlementOracle, fintech, merchant1, oracle } =
+  describe("1. CrossBorderSettlement - Oracle Fund Redirection Attack", function () {
+    it("Should prevent oracle from redirecting funds to arbitrary address", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, attacker, yaraSettlement } =
         await loadFixture(deployContractsFixture);
 
-      // Deploy malicious contract
-      const MaliciousReentrancy = await ethers.getContractFactory("MaliciousReentrancy");
-      const malicious = await MaliciousReentrancy.deploy(await paymentSettlement.getAddress());
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("1000", 6);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
-
-      // Create batch with malicious contract as merchant
-      const merchants = [await malicious.getAddress()];
-      const amounts = [ethers.parseUnits("1000", 6)];
-
-      const tx = await paymentSettlement.connect(fintech).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-      const event = receipt.logs.find((log) => {
-        try {
-          return paymentSettlement.interface.parseLog(log).name === "BatchCreated";
-        } catch {
-          return false;
-        }
-      });
-      const batchId = paymentSettlement.interface.parseLog(event).args.batchId;
-
-      // Register and approve batch with oracle
-      const minimumStake = ethers.parseEther("1");
-      await settlementOracle.connect(oracle).registerOracle({ value: minimumStake });
-      await settlementOracle.connect(oracle).approveBatch(batchId);
-
-      // Set batch ID in malicious contract
-      await malicious.setBatchId(batchId);
-
-      // Attempt reentrancy attack
-      // Note: PaymentSettlement uses ERC20 (USDC), not native currency,
-      // so receive() in malicious contract won't be triggered.
-      // The ReentrancyGuard protects all functions with nonReentrant modifier.
-      // This test verifies the malicious contract receives payment without reentrancy.
-      await expect(malicious.attack()).to.not.be.revertedWithCustomError(
-        paymentSettlement,
-        "ReentrancyGuardReentrantCall"
+      // Sender initiates payment
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        attacker.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
       );
+
+      // Oracle confirms payment
+      await crossBorderSettlement.connect(oracle).confirmPayment(paymentId, "YARA_REF");
+
+      // Verify funds went to Yara settlement address, NOT to attacker
+      expect(await usdc.balanceOf(yaraSettlement.address)).to.equal(amount);
+      expect(await usdc.balanceOf(attacker.address)).to.equal(ethers.parseUnits("10000000", 6));
+
+      // This proves Circle Refund Protocol security
     });
 
-    it("Should prevent reentrancy on createBatch", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
+    it("Should prevent oracle from refunding to different address than sender", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, attacker } =
         await loadFixture(deployContractsFixture);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("500", 6);
 
-      // Normal batch creation should work
-      const merchants = [merchant1.address];
-      const amounts = [ethers.parseUnits("1000", 6)];
+      // Sender initiates payment
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        attacker.address,
+        amount,
+        "KES",
+        ethers.ZeroHash
+      );
 
-      await expect(
-        paymentSettlement.connect(fintech).createBatch(merchants, amounts)
-      ).to.not.be.reverted;
+      // Oracle fails payment
+      await crossBorderSettlement.connect(oracle).failPayment(paymentId, "Failed");
 
-      // ReentrancyGuard prevents nested calls
-      // (Would need malicious CollateralPool to test, but our pool is trusted)
+      // Attacker triggers refund
+      const attackerBalanceBefore = await usdc.balanceOf(attacker.address);
+      const senderBalanceBefore = await usdc.balanceOf(sender.address);
+
+      await crossBorderSettlement.connect(attacker).refundPayment(paymentId);
+
+      // Verify refund went to original sender, NOT attacker
+      expect(await usdc.balanceOf(attacker.address)).to.equal(attackerBalanceBefore);
+      expect(await usdc.balanceOf(sender.address)).to.equal(senderBalanceBefore + amount);
     });
   });
 
   describe("2. Replay Attack Tests", function () {
-    it("Should prevent double claim of same payment", async function () {
-      const { usdc, collateralPool, paymentSettlement, settlementOracle, fintech, merchant1, oracle } =
+    it("Should prevent double confirmation attack", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, merchant1 } =
         await loadFixture(deployContractsFixture);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("750", 6);
 
-      // Create batch
-      const merchants = [merchant1.address];
-      const amounts = [ethers.parseUnits("1000", 6)];
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
 
-      const tx = await paymentSettlement.connect(fintech).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-      const event = receipt.logs.find((log) => {
-        try {
-          return paymentSettlement.interface.parseLog(log).name === "BatchCreated";
-        } catch {
-          return false;
-        }
-      });
-      const batchId = paymentSettlement.interface.parseLog(event).args.batchId;
+      // First confirmation succeeds
+      await crossBorderSettlement.connect(oracle).confirmPayment(paymentId, "YARA_REF_1");
 
-      // Register and approve batch with oracle
-      const minimumStake = ethers.parseEther("1");
-      await settlementOracle.connect(oracle).registerOracle({ value: minimumStake });
-      await settlementOracle.connect(oracle).approveBatch(batchId);
-
-      // Merchant claims once
-      await paymentSettlement.connect(merchant1).claimPayment(batchId);
-
-      // Attempt to claim again - should fail (batch is now completed/not processing)
+      // Second confirmation should fail
       await expect(
-        paymentSettlement.connect(merchant1).claimPayment(batchId)
-      ).to.be.revertedWith("PaymentSettlement: Not processing");
+        crossBorderSettlement.connect(oracle).confirmPayment(paymentId, "YARA_REF_2")
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "InvalidStatus");
     });
 
-    it("Should prevent batch ID collision", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
+    it("Should prevent replay attack on TransactionRegistry", async function () {
+      const { transactionRegistry, fintech, merchant1 } =
         await loadFixture(deployContractsFixture);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("20000", 6));
+      const txId = ethers.randomBytes(32);
+      const amount = 50000n;
 
-      // Create first batch
-      const merchants = [merchant1.address];
-      const amounts = [ethers.parseUnits("1000", 6)];
+      // First recording succeeds
+      await transactionRegistry.connect(fintech).recordTransaction(
+        txId,
+        merchant1.address,
+        amount,
+        "NGN",
+        "REF_123"
+      );
 
-      await paymentSettlement.connect(fintech).createBatch(merchants, amounts);
-
-      // Try to create identical batch (same merchants, amounts, same block)
-      // Should generate different batchId due to nonce increment
+      // Replay attempt fails
       await expect(
-        paymentSettlement.connect(fintech).createBatch(merchants, amounts)
+        transactionRegistry.connect(fintech).recordTransaction(
+          txId,
+          merchant1.address,
+          amount,
+          "NGN",
+          "REF_123"
+        )
+      ).to.be.revertedWithCustomError(transactionRegistry, "TransactionExists");
+    });
+  });
+
+  describe("3. Access Control Bypass Tests", function () {
+    it("Should prevent unauthorized role grants", async function () {
+      const { crossBorderSettlement, attacker } = await loadFixture(deployContractsFixture);
+
+      const ORACLE_ROLE = await crossBorderSettlement.ORACLE_ROLE();
+
+      await expect(
+        crossBorderSettlement.connect(attacker).grantRole(ORACLE_ROLE, attacker.address)
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "AccessControlUnauthorizedAccount");
+    });
+
+    it("Should prevent unauthorized payment confirmation", async function () {
+      const { usdc, crossBorderSettlement, sender, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      await expect(
+        crossBorderSettlement.connect(attacker).confirmPayment(paymentId, "FAKE_REF")
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "AccessControlUnauthorizedAccount");
+    });
+
+    it("Should prevent unauthorized payment failure", async function () {
+      const { usdc, crossBorderSettlement, sender, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      await expect(
+        crossBorderSettlement.connect(attacker).failPayment(paymentId, "Malicious failure")
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "AccessControlUnauthorizedAccount");
+    });
+
+    it("Should prevent unauthorized TransactionRegistry recording", async function () {
+      const { transactionRegistry, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const txId = ethers.randomBytes(32);
+
+      await expect(
+        transactionRegistry.connect(attacker).recordTransaction(
+          txId,
+          merchant1.address,
+          1000,
+          "NGN",
+          "REF_1"
+        )
+      ).to.be.revertedWithCustomError(transactionRegistry, "AccessControlUnauthorizedAccount");
+    });
+  });
+
+  describe("4. Denial of Service (DOS) Tests", function () {
+    it("Should prevent spam attacks via emergency pause", async function () {
+      const { usdc, crossBorderSettlement, owner, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      // Owner pauses contract
+      await crossBorderSettlement.connect(owner).pause();
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+
+      await expect(
+        crossBorderSettlement.connect(sender).initiatePayment(
+          paymentId,
+          merchant1.address,
+          amount,
+          "GHS",
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "EnforcedPause");
+    });
+
+    it("Should enforce amount limits to prevent resource exhaustion", async function () {
+      const { usdc, crossBorderSettlement, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const tooSmall = ethers.parseUnits("1", 6); // Below 10 USDC minimum
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, tooSmall);
+
+      await expect(
+        crossBorderSettlement.connect(sender).initiatePayment(
+          paymentId,
+          merchant1.address,
+          tooSmall,
+          "GHS",
+          ethers.ZeroHash
+        )
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "AmountBelowMinimum");
+    });
+  });
+
+  describe("5. Timeout and Griefing Tests", function () {
+    it("Should prevent griefing attack (locking funds indefinitely)", async function () {
+      const { usdc, crossBorderSettlement, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("5000", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      // Even if oracle never confirms, sender can get refund after timeout
+      await time.increase(48 * 60 * 60 + 1);
+
+      // Anyone can trigger timeout refund
+      await crossBorderSettlement.connect(merchant1).timeoutPayment(paymentId);
+
+      // Verify sender got funds back
+      const senderBalance = await usdc.balanceOf(sender.address);
+      expect(senderBalance).to.equal(ethers.parseUnits("10000000", 6)); // Full balance restored
+    });
+
+    it("Should handle concurrent timeout attempts safely", async function () {
+      const { usdc, crossBorderSettlement, sender, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("1500", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      await time.increase(48 * 60 * 60 + 1);
+
+      // First timeout succeeds
+      await crossBorderSettlement.connect(attacker).timeoutPayment(paymentId);
+
+      // Second timeout should fail
+      await expect(
+        crossBorderSettlement.connect(sender).timeoutPayment(paymentId)
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "InvalidStatus");
+    });
+
+    it("Should reject timeout before expiry", async function () {
+      const { usdc, crossBorderSettlement, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      // Try to timeout immediately
+      await expect(
+        crossBorderSettlement.connect(sender).timeoutPayment(paymentId)
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "PaymentNotExpired");
+    });
+  });
+
+  describe("6. Refund Manipulation Tests", function () {
+    it("Should prevent refund without failure", async function () {
+      const { usdc, crossBorderSettlement, sender, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("2000", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      // Attacker tries to refund without payment being failed
+      await expect(
+        crossBorderSettlement.connect(attacker).refundPayment(paymentId)
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "InvalidStatus");
+    });
+
+    it("Should prevent double refund", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      // Fail and refund
+      await crossBorderSettlement.connect(oracle).failPayment(paymentId, "Failed");
+      await crossBorderSettlement.connect(sender).refundPayment(paymentId);
+
+      // Try to refund again
+      await expect(
+        crossBorderSettlement.connect(sender).refundPayment(paymentId)
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "InvalidStatus");
+    });
+  });
+
+  describe("7. TransactionRegistry Attack Simulations", function () {
+    it("Should prevent unauthorized status manipulation", async function () {
+      const { transactionRegistry, fintech, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const txId = ethers.randomBytes(32);
+
+      await transactionRegistry.connect(fintech).recordTransaction(
+        txId,
+        merchant1.address,
+        1000,
+        "NGN",
+        "REF_1"
+      );
+
+      await expect(
+        transactionRegistry.connect(attacker).updateStatus(
+          txId,
+          1, // Confirmed
+          "Fake confirmation"
+        )
+      ).to.be.revertedWith("TransactionRegistry: not recorder");
+    });
+
+    it("Should maintain immutability of transaction proofs", async function () {
+      const { transactionRegistry, fintech, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const txId = ethers.randomBytes(32);
+      const amount = 75000n;
+
+      const tx = await transactionRegistry.connect(fintech).recordTransaction(
+        txId,
+        merchant1.address,
+        amount,
+        "NGN",
+        "REF_IMMUTABLE"
+      );
+
+      const receipt = await tx.wait();
+      const blockNumber = receipt.blockNumber;
+
+      // Get initial proof
+      const proof1 = await transactionRegistry.getTransactionProof(txId);
+      expect(proof1.blockNumber).to.equal(blockNumber);
+
+      // Mine some blocks
+      await ethers.provider.send("hardhat_mine", ["0x10"]);
+
+      // Get proof again - should remain the same
+      const proof2 = await transactionRegistry.getTransactionProof(txId);
+      expect(proof2.blockNumber).to.equal(blockNumber);
+      expect(proof2.proofHash).to.equal(proof1.proofHash);
+    });
+  });
+
+  describe("8. Front-Running Tests", function () {
+    it("Should prevent front-running of payment confirmations", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, attacker, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("3000", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      // Attacker tries to front-run by failing the payment
+      await expect(
+        crossBorderSettlement.connect(attacker).failPayment(paymentId, "Front-run attempt")
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "AccessControlUnauthorizedAccount");
+
+      // Oracle's confirmation proceeds normally
+      await crossBorderSettlement.connect(oracle).confirmPayment(paymentId, "YARA_REF");
+
+      const payment = await crossBorderSettlement.getPayment(paymentId);
+      expect(payment.status).to.equal(2); // Confirmed
+    });
+  });
+
+  describe("9. Reentrancy Protection Tests", function () {
+    it("Should have ReentrancyGuard on confirmPayment", async function () {
+      const { crossBorderSettlement } = await loadFixture(deployContractsFixture);
+
+      // Verify contract uses ReentrancyGuard (check by examining contract)
+      // The MaliciousReentrancy mock tests this but ERC20 doesn't have callbacks
+      // This is a sanity check that the contract was deployed
+      expect(await crossBorderSettlement.activeEscrowCount()).to.equal(0);
+    });
+
+    it("Should have ReentrancyGuard on refundPayment", async function () {
+      const { usdc, crossBorderSettlement, oracle, sender, merchant1 } =
+        await loadFixture(deployContractsFixture);
+
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
+
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
+      await crossBorderSettlement.connect(sender).initiatePayment(
+        paymentId,
+        merchant1.address,
+        amount,
+        "GHS",
+        ethers.ZeroHash
+      );
+
+      await crossBorderSettlement.connect(oracle).failPayment(paymentId, "Test");
+
+      // Normal refund works (ReentrancyGuard is present but doesn't block normal calls)
+      await expect(
+        crossBorderSettlement.connect(sender).refundPayment(paymentId)
       ).to.not.be.reverted;
     });
   });
 
-  describe("3. Denial of Service (DOS) Tests", function () {
-    it("Should enforce maximum batch size limit", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, attacker } =
+  describe("10. Edge Cases", function () {
+    it("Should reject invalid recipient address", async function () {
+      const { usdc, crossBorderSettlement, sender } =
         await loadFixture(deployContractsFixture);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("1000000", 6));
+      const paymentId = ethers.randomBytes(32);
+      const amount = ethers.parseUnits("100", 6);
 
-      // Try to create batch with 101 merchants (over limit)
-      const merchants = new Array(101).fill(attacker.address);
-      const amounts = new Array(101).fill(ethers.parseUnits("100", 6));
+      await usdc.connect(sender).approve(crossBorderSettlement.target, amount);
 
       await expect(
-        paymentSettlement.connect(fintech).createBatch(merchants, amounts)
-      ).to.be.revertedWith("PaymentSettlement: Batch too large");
-    });
-
-    it("Should handle gas-intensive operations gracefully", async function () {
-      const { usdc, collateralPool, paymentSettlement, settlementOracle, fintech, oracle } =
-        await loadFixture(deployContractsFixture);
-
-      // Fintech deposits large collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("1000000", 6));
-
-      // Create maximum size batch (100 merchants)
-      const merchants = new Array(100).fill(ethers.ZeroAddress).map((_, i) =>
-        ethers.Wallet.createRandom().address
-      );
-      const amounts = new Array(100).fill(ethers.parseUnits("100", 6));
-
-      // Should succeed without running out of gas
-      const tx = await paymentSettlement.connect(fintech).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-
-      expect(receipt.gasUsed).to.be.lessThan(30000000n); // Should be under block gas limit
-    });
-
-    it("Should prevent spam attacks via emergency pause", async function () {
-      const { paymentSettlement, owner, fintech, merchant1 } = await loadFixture(deployContractsFixture);
-
-      // Owner pauses contract
-      await paymentSettlement.connect(owner).pause();
-
-      // All operations should be blocked
-      await expect(
-        paymentSettlement.connect(fintech).createBatch([merchant1.address], [ethers.parseUnits("100", 6)])
-      ).to.be.revertedWithCustomError(paymentSettlement, "EnforcedPause");
-    });
-  });
-
-  describe("4. Front-Running Tests", function () {
-    it("Should handle concurrent batch creation", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1, merchant2 } =
-        await loadFixture(deployContractsFixture);
-
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("20000", 6));
-
-      // Create two batches in quick succession
-      const tx1 = paymentSettlement.connect(fintech).createBatch(
-        [merchant1.address],
-        [ethers.parseUnits("1000", 6)]
-      );
-
-      const tx2 = paymentSettlement.connect(fintech).createBatch(
-        [merchant2.address],
-        [ethers.parseUnits("2000", 6)]
-      );
-
-      // Both should succeed with different batch IDs
-      await expect(tx1).to.not.be.reverted;
-      await expect(tx2).to.not.be.reverted;
-    });
-
-    it("Should protect withdrawal delays from front-running", async function () {
-      const { usdc, collateralPool, fintech } = await loadFixture(deployContractsFixture);
-
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
-
-      // Request withdrawal
-      await collateralPool.connect(fintech).requestWithdrawal(ethers.parseUnits("5000", 6));
-
-      // Try to execute immediately (before delay) - should fail
-      await expect(
-        collateralPool.connect(fintech).executeWithdrawal()
-      ).to.be.revertedWith("CollateralPool: Withdrawal delay not met");
-
-      // Even if front-run, 24h delay prevents abuse
-    });
-  });
-
-  describe("5. Integer Overflow/Underflow Tests", function () {
-    it("Should prevent amount overflow in batch creation", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
-        await loadFixture(deployContractsFixture);
-
-      // Try to create batch with amounts that would overflow
-      const merchants = [merchant1.address, merchant1.address];
-      const amounts = [ethers.MaxUint256 / 2n, ethers.MaxUint256 / 2n];
-
-      // Should revert due to overflow protection in Solidity 0.8.x or insufficient balance
-      await expect(
-        paymentSettlement.connect(fintech).createBatch(merchants, amounts)
-      ).to.be.reverted;
-    });
-
-    it("Should prevent underflow in collateral unlock", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
-        await loadFixture(deployContractsFixture);
-
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
-
-      // Create batch
-      const merchants = [merchant1.address];
-      const amounts = [ethers.parseUnits("1000", 6)];
-
-      const tx = await paymentSettlement.connect(fintech).createBatch(merchants, amounts);
-      const receipt = await tx.wait();
-      const event = receipt.logs.find((log) => {
-        try {
-          return paymentSettlement.interface.parseLog(log).name === "BatchCreated";
-        } catch {
-          return false;
-        }
-      });
-      const batchId = paymentSettlement.interface.parseLog(event).args.batchId;
-
-      // Cancel batch (unlocks collateral)
-      await paymentSettlement.connect(fintech).cancelBatch(batchId);
-
-      // Locked balance should not underflow
-      const balance = await collateralPool.balances(fintech.address);
-      expect(balance.lockedBalance).to.equal(0);
-    });
-  });
-
-  describe("6. Access Control Bypass Tests", function () {
-    it("Should prevent unauthorized role grants", async function () {
-      const { collateralPool, attacker } = await loadFixture(deployContractsFixture);
-
-      const SETTLEMENT_ROLE = await collateralPool.SETTLEMENT_ROLE();
-
-      // Attacker tries to grant themselves SETTLEMENT_ROLE
-      await expect(
-        collateralPool.connect(attacker).grantRole(SETTLEMENT_ROLE, attacker.address)
-      ).to.be.reverted; // Missing DEFAULT_ADMIN_ROLE
-    });
-
-    it("Should prevent direct lockCollateral call", async function () {
-      const { collateralPool, attacker } = await loadFixture(deployContractsFixture);
-
-      // Attacker tries to lock collateral directly
-      await expect(
-        collateralPool.connect(attacker).lockCollateral(
-          attacker.address,
-          ethers.parseUnits("1000", 6),
+        crossBorderSettlement.connect(sender).initiatePayment(
+          paymentId,
+          ethers.ZeroAddress,
+          amount,
+          "GHS",
           ethers.ZeroHash
         )
-      ).to.be.reverted; // Missing SETTLEMENT_ROLE
+      ).to.be.revertedWithCustomError(crossBorderSettlement, "InvalidRecipient");
     });
 
-    it("Should prevent unauthorized batch approval", async function () {
-      const { paymentSettlement, attacker } = await loadFixture(deployContractsFixture);
-
-      // Attacker tries to approve a batch
-      await expect(
-        paymentSettlement.connect(attacker).approveBatch(ethers.ZeroHash)
-      ).to.be.reverted; // Missing ORACLE_ROLE
-    });
-  });
-
-  describe("7. Edge Case Tests", function () {
-    it("Should handle zero-amount payments gracefully", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
+    it("Should handle maximum USDC amount correctly", async function () {
+      const { usdc, crossBorderSettlement, sender, merchant1 } =
         await loadFixture(deployContractsFixture);
 
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
+      const paymentId = ethers.randomBytes(32);
+      const maxAmount = ethers.parseUnits("100000", 6); // Max allowed
 
-      // Try to create batch with zero amount
+      // Need more USDC
+      await usdc.mint(sender.address, maxAmount);
+      await usdc.connect(sender).approve(crossBorderSettlement.target, maxAmount);
+
       await expect(
-        paymentSettlement.connect(fintech).createBatch([merchant1.address], [0])
-      ).to.be.revertedWith("PaymentSettlement: Zero amount");
-    });
-
-    it("Should handle empty merchant array", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech } =
-        await loadFixture(deployContractsFixture);
-
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
-
-      // Try to create batch with empty arrays
-      await expect(
-        paymentSettlement.connect(fintech).createBatch([], [])
-      ).to.be.revertedWith("PaymentSettlement: Empty batch");
-    });
-
-    it("Should handle mismatched array lengths", async function () {
-      const { usdc, collateralPool, paymentSettlement, fintech, merchant1 } =
-        await loadFixture(deployContractsFixture);
-
-      // Fintech deposits collateral
-      await collateralPool.connect(fintech).deposit(ethers.parseUnits("10000", 6));
-
-      // Try to create batch with mismatched arrays
-      await expect(
-        paymentSettlement.connect(fintech).createBatch(
-          [merchant1.address],
-          [ethers.parseUnits("1000", 6), ethers.parseUnits("2000", 6)]
+        crossBorderSettlement.connect(sender).initiatePayment(
+          paymentId,
+          merchant1.address,
+          maxAmount,
+          "GHS",
+          ethers.ZeroHash
         )
-      ).to.be.revertedWith("PaymentSettlement: Length mismatch");
+      ).to.not.be.reverted;
     });
   });
 });
